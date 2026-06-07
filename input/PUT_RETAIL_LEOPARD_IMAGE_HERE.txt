@@ -1,0 +1,4 @@
+Place your legally obtained Mac OS X Leopard retail DVD image here if you want.
+The script will also accept any existing path passed with --retail.
+
+Do not use unofficial or pirated Leopard images.

@@ -1,0 +1,21 @@
+.DS_Store
+
+# Downloaded third-party archives and Apple update images.
+downloads/*
+!downloads/.gitkeep
+
+# Local retail installer images and placeholders.
+input/*
+!input/.gitkeep
+!input/PUT_RETAIL_LEOPARD_IMAGE_HERE.txt
+
+# Generated extraction/build output.
+work/*
+!work/.gitkeep
+
+output/*
+!output/.gitkeep
+
+# Runtime logs.
+logs/*
+!logs/.gitkeep
