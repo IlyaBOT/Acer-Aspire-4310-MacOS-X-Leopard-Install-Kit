@@ -1,0 +1,5 @@
+timestamp	source	version	url	filename	sha256	status
+2026-08-17T21:53:37Z	OpenCorePkg	1.0.7	https://github.com/acidanthera/OpenCorePkg/releases/download/1.0.7/OpenCore-1.0.7-DEBUG.zip	OpenCore-1.0.7-DEBUG.zip	3644db831dd18344896d7a86077b8c338c0eaa01b1579d7fa00785598cac1f2b	VERIFIED
+2026-08-17T21:53:39Z	OcBinaryData/HfsPlusLegacy.efi	e74e533d8f89	https://raw.githubusercontent.com/acidanthera/OcBinaryData/e74e533d8f89c1d5014cfb47c185502bf415741f/Drivers/HfsPlusLegacy.efi	OcBinaryData-e74e533d8f89-HfsPlusLegacy.efi	a7185433aacf677268ccfd339b8adc27fa07f19149500a78d08bf79670c82c37	VERIFIED
+2026-08-17T21:53:39Z	OcBinaryData/HfsPlus32.efi	e74e533d8f89	https://raw.githubusercontent.com/acidanthera/OcBinaryData/e74e533d8f89c1d5014cfb47c185502bf415741f/Drivers/HfsPlus32.efi	OcBinaryData-e74e533d8f89-HfsPlus32.efi	40badc5338e4cb373ed8370aba52bad9668f1970c68f546b9cba46ed55153d18	VERIFIED
+2026-08-17T21:53:42Z	khronokernel/Legacy-Kexts	4dfc274111ab	https://api.github.com/repos/khronokernel/Legacy-Kexts/zipball/4dfc274111abdc94e94498d1e76d9354f3700fc9	Legacy-Kexts-4dfc274111ab.zip	4a0ef15b830b9d1436660b810eaefc0700cf42b9bf847178e3f58028a167e07d	VERIFIED
