@@ -1,21 +1,32 @@
 .DS_Store
+__pycache__/
+*.pyc
 
 # Downloaded third-party archives and Apple update images.
 downloads/*
-!downloads/.gitkeep
+!downloads/manifest.tsv
 
 # Local retail installer images and placeholders.
 input/*
-!input/.gitkeep
-!input/PUT_RETAIL_LEOPARD_IMAGE_HERE.txt
+!input/README.md
+!input/kernels/
+input/kernels/*
+!input/kernels/leopard/
+!input/kernels/snowleopard/
+input/kernels/leopard/*
+input/kernels/snowleopard/*
+!input/kernels/leopard/.gitkeep
+!input/kernels/snowleopard/.gitkeep
+!input/acpi/
+input/acpi/*
+!input/acpi/.gitkeep
+!input/chameleon/
+input/chameleon/*
+!input/chameleon/.gitkeep
 
 # Generated extraction/build output.
-work/*
-!work/.gitkeep
+cache/
+output/
 
-output/*
-!output/.gitkeep
-
-# Runtime logs.
-logs/*
-!logs/.gitkeep
+# Local safety snapshots are intentionally retained but not committed.
+backup/
