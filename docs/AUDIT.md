@@ -30,7 +30,8 @@ shell-скриптов, `git status` и `git diff`. Найден один 1032-�
   отсекались.
 - External-disk guard использовал логическое «хотя бы один признак USB/external/removable» и
   не делал строгий запрет по `Internal: Yes`.
-- Не было защиты важного `/Volumes/Netac` и проверки всех slices выбранного whole disk.
+- Не было универсальной защиты объявленных пользователем томов и проверки всех slices
+  выбранного whole disk.
 - `asr --erase` выполнялся по mount point, а дальнейший код полагался на фиксированные slices
   и имена.
 - Опасный генератор установки Chameleon на HDD принимал независимо заданные disk/slice/target;
@@ -40,14 +41,13 @@ shell-скриптов, `git status` и `git diff`. Найден один 1032-�
 
 ## Подключённая флешка
 
-В среде выполнения Codex каталога `/Volumes` нет, поэтому `/Volumes/NO NAME` и
-`/Volumes/Netac` фактически недоступны. Никакая запись, mount или unmount не выполнялись.
-Новый read-only audit проверяет boot markers, EFI tree, config plist и названия High Sierra /
-Leopard images командой:
+В первоначальной удалённой среде выполнения Codex каталога `/Volumes` не было, поэтому тома
+локального Mac фактически были недоступны. Никакая запись, mount или unmount не выполнялись.
+Новый read-only audit проверяет boot markers, EFI tree, config plist и названия installer
+images командой с явно переданным путём:
 
 ```bash
-./prepare_aspire4310_macos.sh --audit --volume "/Volumes/NO NAME"
+./prepare_aspire4310_macos.sh --audit --volume "/Volumes/BOOT"
 ```
 
-Это ограничение среды означает, что фактическая загрузочность текущей флешки пока не
-подтверждена.
+Названия пользовательских томов намеренно не фиксируются в коде или документации.

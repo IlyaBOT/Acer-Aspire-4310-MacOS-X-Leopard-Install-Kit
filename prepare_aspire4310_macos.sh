@@ -33,7 +33,11 @@ SATA_MODE="native"
 ACPI_MODE="native"
 DISK=""
 RETAIL=""
-AUDIT_VOLUME="/Volumes/NO NAME"
+AUDIT_VOLUME=""
+USB_LAYOUT="fresh"
+BOOT_SLICE=""
+INSTALLER_SLICE=""
+PROTECTED_VOLUMES=()
 DRY_RUN=0
 ALLOW_INTERNAL=0
 SKIP_COMBO_UPDATES=0
@@ -70,10 +74,10 @@ Aspire 4310 legacy macOS installer builder
 
 Read-only:
   ./prepare_aspire4310_macos.sh --doctor
-  ./prepare_aspire4310_macos.sh --audit [--volume "/Volumes/NO NAME"]
+  ./prepare_aspire4310_macos.sh --audit [--volume "/Volumes/BOOT"]
   ./prepare_aspire4310_macos.sh --list-disks
   ./prepare_aspire4310_macos.sh --verify-usb --disk /dev/diskX
-  ./prepare_aspire4310_macos.sh --verify-usb --volume "/Volumes/NO NAME"
+  ./prepare_aspire4310_macos.sh --verify-usb --volume "/Volumes/BOOT"
 
 Non-destructive project operations:
   ./prepare_aspire4310_macos.sh --download [--skip-combo-updates]
@@ -82,7 +86,12 @@ Non-destructive project operations:
 
 Destructive USB operation (macOS only; never automatic):
   ./prepare_aspire4310_macos.sh --make-usb --os leopard --disk /dev/diskX \
-    --retail input/Leopard-Retail.dmg
+    --retail input/Leopard-Retail.iso
+
+Preserve an existing first FAT boot partition and replace only partition 2:
+  ./prepare_aspire4310_macos.sh --make-usb --layout preserve --disk /dev/diskX \
+    --boot-slice /dev/diskXs1 --installer-slice /dev/diskXs2 \
+    --retail input/Leopard-Retail.iso
 
 Build choices:
   --bootloader auto|opencore|chameleon    default: auto (OpenCore first)
@@ -93,11 +102,15 @@ Build choices:
   --kext-set minimal|full                 default: minimal
   --sata native|injected                  default: native
   --acpi native|patched                   default: native
+  --layout fresh|preserve                 default: fresh (whole disk is repartitioned)
+  --boot-slice /dev/diskXs1               required by preserve layout
+  --installer-slice /dev/diskXs2          required by preserve layout; contents are erased
+  --protect-volume "/Volumes/KEEP"         repeatable mounted-volume safety guard
   --dry-run                               print destructive commands only
-  --allow-internal                        extra override; exact ERASE still required
+  --allow-internal                        extra override; exact confirmation still required
 
-The script never downloads a retail Mac OS X installer. It refuses to operate on
-the protected /Volumes/Netac mount and refuses any whole disk containing it.
+The script never downloads a retail Mac OS X installer. Volume names are never hardcoded;
+use --protect-volume for any mounted volume that must make a target disk ineligible.
 EOF
 }
 
@@ -263,10 +276,17 @@ require_macos_build_host() {
     || die "USB creation requires a supported Intel macOS build host; detected $HOST_PRODUCT_NAME $HOST_VERSION $HOST_ARCH."
 }
 
+is_protected_volume() {
+  local candidate="${1%/}" protected
+  for protected in "${PROTECTED_VOLUMES[@]}"; do
+    [[ "$candidate" == "${protected%/}" ]] && return 0
+  done
+  return 1
+}
+
 audit_volume() {
   local volume="$1"
-  [[ "$volume" != "/Volumes/Netac" && "$volume" != "/Volumes/Netac/"* ]] \
-    || die "Protected volume /Volumes/Netac is explicitly out of scope."
+  is_protected_volume "$volume" && die "Protected volume is explicitly out of scope: $volume"
   printf '\nUSB volume audit (read-only): %s\n' "$volume"
   if [[ ! -d "$volume" ]]; then
     printf '  NOT AVAILABLE in this execution environment.\n'
@@ -281,7 +301,8 @@ audit_volume() {
     -iname '*.dmg' -o -iname '*.iso' -o -iname '*leopard*' -o -iname '*high*sierra*' \
   \) -print 2>/dev/null | sed 's/^/    /' || true
   printf '  EFI files:\n'
-  find "$volume/EFI" -xdev -maxdepth 5 -type f -print 2>/dev/null | sort | sed 's/^/    /' || true
+  find "$volume/EFI" -xdev -maxdepth 8 -type f ! -path '*/EFI/OC/Resources/*' -print 2>/dev/null \
+    | sort | sed 's/^/    /' || true
   if [[ -f "$volume/EFI/OC/OpenCore.efi" ]]; then
     printf '  OpenCore binary metadata:\n'
     file "$volume/EFI/OC/OpenCore.efi" 2>/dev/null | sed 's/^/    /' || true
@@ -313,7 +334,7 @@ Legacy implementation findings:
   BROKEN/STALE: Chameleon-only MBR design, dead HTTP binary URL, unpinned master archive,
         no OpenCore/OpenDuet, no host doctor, no Snow Leopard profile, and no hashes/manifest.
   UNSAFE: the old external-disk test accepted any one weak USB/external/removable clue and did
-        not explicitly reject Internal: Yes or the protected Netac volume.
+        not explicitly reject Internal: Yes or support user-declared protected volumes.
   WRONG LAYERING: audio and battery kexts were placed in the first boot set; every legacy kext
         was copied without checking Mach-O slices, bundle metadata, dependencies, or OS floor.
   ARCHITECTURE: host uname was never used for target selection, but no independent target CPU
@@ -321,7 +342,11 @@ Legacy implementation findings:
   LOST MEDIA: the historical Chameleon URL is not trusted or downloaded automatically. A user-
         supplied archive remains supported as an explicit fallback.
 EOF
-  audit_volume "$AUDIT_VOLUME"
+  if [[ -n "$AUDIT_VOLUME" ]]; then
+    audit_volume "$AUDIT_VOLUME"
+  else
+    printf '\nNo volume path supplied; project-only audit complete.\n'
+  fi
 }
 
 sha256_file() {
@@ -943,15 +968,46 @@ validate_disk_identifier() {
   [[ "$1" =~ ^/dev/disk[0-9]+$ ]] || die "Whole-disk identifier required, e.g. /dev/disk2 (not a slice)."
 }
 
+validate_slice_identifier() {
+  [[ "$1" =~ ^/dev/disk[0-9]+s[0-9]+$ ]] || die "Partition identifier required, e.g. /dev/disk2s1."
+}
+
+disk_partition_slices() {
+  diskutil list "$1" | awk '/[0-9]+:[[:space:]]/ {print $NF}' \
+    | grep -E '^disk[0-9]+s[0-9]+$' | sed 's#^#/dev/#'
+}
+
 disk_contains_protected_volume() {
-  local disk="$1" slice mount_point volume_name details
+  local disk="$1" slice mount_point details
   while IFS= read -r slice; do
     details="$(diskutil info "$slice" 2>/dev/null || true)"
     mount_point="$(printf '%s\n' "$details" | awk -F': *' '/Mount Point/ {print $2; exit}')"
-    volume_name="$(printf '%s\n' "$details" | awk -F': *' '/Volume Name/ {print $2; exit}')"
-    [[ "$mount_point" == "/Volumes/Netac" || "$volume_name" == "Netac" ]] && return 0
-  done < <(diskutil list "$disk" | awk '/[0-9]+:[[:space:]]/ {print $NF}' | grep -E '^disk[0-9]+s[0-9]+$' | sed 's#^#/dev/#')
+    [[ -n "$mount_point" && "$mount_point" != "Not mounted" ]] || continue
+    is_protected_volume "$mount_point" && return 0
+  done < <(disk_partition_slices "$disk")
   return 1
+}
+
+assert_preserve_layout() {
+  local slices partition_count boot_info
+  validate_slice_identifier "$BOOT_SLICE"
+  validate_slice_identifier "$INSTALLER_SLICE"
+  [[ "$BOOT_SLICE" == "${DISK}s1" ]] \
+    || die "Preserve layout requires the OpenDuet boot partition to be ${DISK}s1."
+  [[ "$INSTALLER_SLICE" == "${DISK}s2" ]] \
+    || die "Preserve layout requires the replaceable installer partition to be ${DISK}s2."
+  [[ "$BOOT_SLICE" != "$INSTALLER_SLICE" ]] || die "Boot and installer slices must differ."
+
+  diskutil info "$BOOT_SLICE" >/dev/null || die "Boot slice does not exist: $BOOT_SLICE"
+  diskutil info "$INSTALLER_SLICE" >/dev/null || die "Installer slice does not exist: $INSTALLER_SLICE"
+  slices="$(disk_partition_slices "$DISK")"
+  partition_count="$(printf '%s\n' "$slices" | awk 'NF {count++} END {print count+0}')"
+  [[ "$partition_count" == "2" ]] \
+    || die "Preserve layout is intentionally limited to exactly two partitions; found $partition_count on $DISK."
+  boot_info="$(diskutil info "$BOOT_SLICE")"
+  printf '%s\n' "$boot_info" | grep -Eq \
+    'File System Personality:.*(MS-DOS FAT32|FAT32)|Type \(Bundle\):.*msdos|EFI System Partition' \
+    || die "The preserved first partition must be FAT32/EFI: $BOOT_SLICE"
 }
 
 assert_safe_target_disk() {
@@ -960,7 +1016,7 @@ assert_safe_target_disk() {
   printf '%s\n' "$info"
   printf '\nCurrent partition map for %s:\n' "$disk"
   diskutil list "$disk"
-  disk_contains_protected_volume "$disk" && die "$disk contains protected /Volumes/Netac; refusing even with overrides."
+  disk_contains_protected_volume "$disk" && die "$disk contains a volume protected by --protect-volume."
   internal="$(printf '%s\n' "$info" | awk -F': *' '/Internal:/ {print $2; exit}')"
   if [[ "$internal" == "Yes" && "$ALLOW_INTERNAL" -ne 1 ]]; then
     die "$disk is Internal: Yes. Refusing without --allow-internal."
@@ -973,7 +1029,7 @@ assert_safe_target_disk() {
 run_list_disks() {
   require_macos_build_host
   diskutil list
-  printf '\nNo disk was modified. Never select a disk containing /Volumes/Netac.\n'
+  printf '\nNo disk was modified. Verify the whole-disk identifier and every partition before continuing.\n'
 }
 
 confirm_erase() {
@@ -981,6 +1037,43 @@ confirm_erase() {
   printf '\nType exactly: ERASE %s\n> ' "$DISK"
   IFS= read -r answer
   [[ "$answer" == "ERASE $DISK" ]] || die "Confirmation mismatch; nothing was erased."
+}
+
+confirm_preserve_replace() {
+  local answer expected
+  expected="REPLACE $INSTALLER_SLICE AND UPDATE $BOOT_SLICE"
+  printf '\nThe partition map and partition 1 will be preserved.\n'
+  printf 'All contents of %s will be erased; EFI/OpenDuet on %s will be replaced.\n' \
+    "$INSTALLER_SLICE" "$BOOT_SLICE"
+  printf 'Type exactly: %s\n> ' "$expected"
+  IFS= read -r answer
+  [[ "$answer" == "$expected" ]] || die "Confirmation mismatch; nothing was erased."
+}
+
+replace_boot_files() {
+  local efi_mount="$1" build_root="$2" backup_dir had_efi=0
+  case "$efi_mount" in
+    /Volumes/?*) ;;
+    *) die "Refusing EFI replacement at unexpected mount point: $efi_mount" ;;
+  esac
+  backup_dir="$ROOT_DIR/backup/usb-$(date '+%Y%m%d-%H%M%S')-$(basename "$DISK")"
+  if [[ -d "$efi_mount/EFI" || -f "$efi_mount/boot" ]]; then
+    mkdir -p "$backup_dir"
+    if [[ -d "$efi_mount/EFI" ]]; then
+      ditto "$efi_mount/EFI" "$backup_dir/EFI"
+      [[ -d "$backup_dir/EFI" ]] || die "Existing EFI backup failed: $backup_dir"
+      had_efi=1
+    fi
+    if [[ -f "$efi_mount/boot" ]]; then
+      cp -p "$efi_mount/boot" "$backup_dir/boot"
+    fi
+    if (( had_efi == 1 )); then
+      sudo rm -rf -- "$efi_mount/EFI"
+    fi
+    log "Existing boot files backed up outside the USB: $backup_dir"
+  fi
+  sudo ditto "$build_root/ESP/EFI" "$efi_mount/EFI"
+  [[ -f "$efi_mount/EFI/OC/config.plist" ]] || die "New EFI copy could not be verified."
 }
 
 auto_retail_source() {
@@ -1036,8 +1129,25 @@ run_make_usb() {
   build_root="$OUTPUT_DIR/$OS_PROFILE/opencore-$deploy_variant"
   [[ -f "$build_root/ESP/EFI/OC/config.plist" ]] || die "Expected deployment build is missing: $build_root"
   assert_safe_target_disk "$DISK"
+  if [[ "$USB_LAYOUT" == "preserve" ]]; then
+    [[ -n "$BOOT_SLICE" && -n "$INSTALLER_SLICE" ]] \
+      || die "--layout preserve requires --boot-slice and --installer-slice."
+    assert_preserve_layout
+  else
+    [[ -z "$BOOT_SLICE" && -z "$INSTALLER_SLICE" ]] \
+      || die "--boot-slice/--installer-slice are valid only with --layout preserve."
+  fi
   if (( DRY_RUN == 1 )); then
-    cat <<EOF
+    if [[ "$USB_LAYOUT" == "preserve" ]]; then
+      cat <<EOF
+DRY RUN — no disk writes were performed.
+Would preserve the GPT map and $BOOT_SLICE, then:
+  sudo asr restore --source "$RETAIL" --target "$INSTALLER_SLICE" --erase --noprompt
+  back up and replace EFI files on $BOOT_SLICE
+  update OpenDuet MBR/PBR using OpenCore $OC_VERSION BootInstall_${OC_ARCH_NAME}.tool
+EOF
+    else
+      cat <<EOF
 DRY RUN — no disk writes were performed.
 Would run:
   diskutil partitionDisk "$DISK" GPT JHFS+ INSTALLER R
@@ -1045,12 +1155,19 @@ Would run:
   copy "$build_root/ESP/EFI" to the mounted EFI partition
   run matching OpenCore $OC_VERSION Utilities/LegacyBoot/BootInstall_${OC_ARCH_NAME}.tool for $DISK
 EOF
+    fi
     return 0
   fi
-  confirm_erase
-  sudo diskutil partitionDisk "$DISK" GPT JHFS+ INSTALLER R
-  esp_slice="${DISK}s1"
-  installer_slice="${DISK}s2"
+  if [[ "$USB_LAYOUT" == "preserve" ]]; then
+    confirm_preserve_replace
+    esp_slice="$BOOT_SLICE"
+    installer_slice="$INSTALLER_SLICE"
+  else
+    confirm_erase
+    sudo diskutil partitionDisk "$DISK" GPT JHFS+ INSTALLER R
+    esp_slice="${DISK}s1"
+    installer_slice="${DISK}s2"
+  fi
   restore_retail "$RETAIL" "$installer_slice"
   volume_uuid="$(diskutil info -plist "$installer_slice" | plutil -extract VolumeUUID raw -o - - 2>/dev/null || true)"
   [[ -n "$volume_uuid" ]] || die "Restore completed, but installer VolumeUUID could not be rediscovered."
@@ -1058,7 +1175,7 @@ EOF
   diskutil mount "$esp_slice" >/dev/null
   efi_mount="$(diskutil info "$esp_slice" | awk -F': *' '/Mount Point/ {print $2; exit}')"
   [[ -d "$efi_mount" ]] || die "EFI partition did not mount."
-  sudo ditto "$build_root/ESP/EFI" "$efi_mount/EFI"
+  replace_boot_files "$efi_mount" "$build_root"
   disk_number="${DISK#/dev/disk}"
   boot_tool="$OC_CACHE_ROOT/Utilities/LegacyBoot/BootInstall_${OC_ARCH_NAME}.tool"
   chmod +x "$boot_tool" "$OC_CACHE_ROOT/Utilities/LegacyBoot/BootInstallBase.sh"
@@ -1074,18 +1191,18 @@ run_verify_usb() {
     validate_disk_identifier "$DISK"
     info="$(diskutil info "$DISK")" || die "Cannot inspect $DISK"
     printf '%s\n' "$info"
-    disk_contains_protected_volume "$DISK" && warn "$DISK contains protected Netac; verification remains read-only."
+    disk_contains_protected_volume "$DISK" && warn "$DISK contains a protected volume; verification remains read-only."
     while IFS= read -r slice; do
       mount_point="$(diskutil info "$slice" 2>/dev/null | awk -F': *' '/Mount Point/ {print $2; exit}')"
       if [[ -n "$mount_point" && "$mount_point" != "Not mounted" ]]; then
-        if [[ "$mount_point" == "/Volumes/Netac" ]]; then
+        if is_protected_volume "$mount_point"; then
           printf '\nProtected volume skipped without reading: %s\n' "$mount_point"
           continue
         fi
         audit_volume "$mount_point"
         found=$((found + 1))
       fi
-    done < <(diskutil list "$DISK" | awk '/[0-9]+:[[:space:]]/ {print $NF}' | grep -E '^disk[0-9]+s[0-9]+$' | sed 's#^#/dev/#')
+    done < <(disk_partition_slices "$DISK")
     (( found > 0 )) || warn "No mounted partitions were available for file-level verification; nothing was mounted automatically."
   else
     audit_volume "$AUDIT_VOLUME"
@@ -1120,6 +1237,10 @@ while (($#)); do
     --disk) need_value "$@"; shift; DISK="$1" ;;
     --retail) need_value "$@"; shift; RETAIL="$1" ;;
     --volume) need_value "$@"; shift; AUDIT_VOLUME="$1" ;;
+    --layout) need_value "$@"; shift; USB_LAYOUT="$1" ;;
+    --boot-slice) need_value "$@"; shift; BOOT_SLICE="$1" ;;
+    --installer-slice) need_value "$@"; shift; INSTALLER_SLICE="$1" ;;
+    --protect-volume) need_value "$@"; shift; PROTECTED_VOLUMES+=("$1") ;;
     --dry-run) DRY_RUN=1 ;;
     --allow-internal) ALLOW_INTERNAL=1 ;;
     --skip-combo-updates) SKIP_COMBO_UPDATES=1 ;;
@@ -1135,6 +1256,7 @@ case "$BOOT_PRESET" in normal|verbose|safe|diagnostic) ;; *) die "Invalid --boot
 case "$KEXT_SET" in minimal|full) ;; *) die "--kext-set must be minimal or full" ;; esac
 case "$SATA_MODE" in native|injected) ;; *) die "--sata must be native or injected" ;; esac
 case "$ACPI_MODE" in native|patched) ;; *) die "--acpi must be native or patched" ;; esac
+case "$USB_LAYOUT" in fresh|preserve) ;; *) die "--layout must be fresh or preserve" ;; esac
 
 case "$MODE" in
   doctor) if ! doctor_host; then exit 1; fi ;;

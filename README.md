@@ -13,7 +13,7 @@
 
 ```bash
 ./prepare_aspire4310_macos.sh --doctor
-./prepare_aspire4310_macos.sh --audit --volume "/Volumes/NO NAME"
+./prepare_aspire4310_macos.sh --audit --volume "/Volumes/BOOT"
 ./prepare_aspire4310_macos.sh --download
 ./prepare_aspire4310_macos.sh --build --os leopard
 ```
@@ -45,12 +45,43 @@ ERASE /dev/diskX
 
 Не используйте существующую многосекционную флешку с важными данными для `--make-usb`, возьмите отдельную пустую флешку!
 
+Названия томов не зашиты в код. Любой смонтированный том, из-за которого весь физический
+диск должен стать недоступен для записи, можно защитить явно (опция повторяемая):
+
+```bash
+./prepare_aspire4310_macos.sh --make-usb ... \
+  --protect-volume "/Volumes/KEEP"
+```
+
 Сначала можно посмотреть точный план без записи:
 
 ```bash
 ./prepare_aspire4310_macos.sh --make-usb --os leopard \
-  --disk /dev/diskX --retail input/Leopard-Retail.dmg --dry-run
+  --disk /dev/diskX --retail input/Leopard-Retail.iso --dry-run
 ```
+
+### Сохранение существующего boot-раздела
+
+Для внешнего GPT-диска ровно с двумя разделами отдельный режим сохраняет первый FAT32
+boot-раздел, полностью заменяет на нём EFI/OpenDuet и стирает только второй раздел под
+installer. Старые boot-файлы предварительно копируются в локальный игнорируемый
+`backup/usb-.../`.
+
+Сначала обязательно выполнить dry-run с явными whole-disk и slice identifiers:
+
+```bash
+./prepare_aspire4310_macos.sh --make-usb --layout preserve \
+  --os leopard --bootloader opencore \
+  --disk /dev/diskX \
+  --boot-slice /dev/diskXs1 \
+  --installer-slice /dev/diskXs2 \
+  --retail input/Leopard-Retail.iso \
+  --dry-run
+```
+
+Режим требует, чтобы boot-раздел был `s1`, заменяемый раздел — `s2`, а других разделов на
+диске не было. Без `--dry-run` потребуется буквальное подтверждение с обоими slice IDs.
+Обычный `--layout fresh` по-прежнему переразмечает весь выбранный диск.
 
 ## Build profiles
 
