@@ -42,6 +42,7 @@ DRY_RUN=0
 ALLOW_INTERNAL=0
 SKIP_COMBO_UPDATES=0
 ATTACHED_IMAGE_DEVICE=""
+ATTACHED_RETAIL_VOLUME=""
 TEMP_DIR=""
 
 HOST_OS="unknown"
@@ -1073,7 +1074,9 @@ replace_boot_files() {
     log "Existing boot files backed up outside the USB: $backup_dir"
   fi
   sudo ditto "$build_root/ESP/EFI" "$efi_mount/EFI"
-  [[ -f "$efi_mount/EFI/OC/config.plist" ]] || die "New EFI copy could not be verified."
+  sudo cp -p "$build_root/ESP/boot" "$efi_mount/boot"
+  [[ -f "$efi_mount/EFI/OC/config.plist" && -f "$efi_mount/boot" ]] \
+    || die "New EFI/OpenDuet copy could not be verified."
 }
 
 auto_retail_source() {
@@ -1094,14 +1097,19 @@ attach_retail_readonly() {
   ATTACHED_IMAGE_DEVICE="$(printf '%s\n' "$output" | awk '/^\/dev\// {print $1; exit}')"
   volume="$(printf '%s\n' "$output" | awk '/\/Volumes\// {print substr($0,index($0,"/Volumes/")); exit}')"
   [[ -n "$volume" ]] || die "Could not identify read-only mounted retail volume."
-  printf '%s\n' "$volume"
+  ATTACHED_RETAIL_VOLUME="$volume"
 }
 
 restore_retail() {
   local source="$1" target="$2"
   local restore_source="$source" lower
   lower="$(printf '%s' "$source" | tr '[:upper:]' '[:lower:]')"
-  case "$lower" in *.dmg|*.iso) restore_source="$(attach_retail_readonly "$source")" ;; esac
+  case "$lower" in
+    *.dmg|*.iso)
+      attach_retail_readonly "$source"
+      restore_source="$ATTACHED_RETAIL_VOLUME"
+      ;;
+  esac
   if ! sudo asr restore --source "$restore_source" --target "$target" --erase --noprompt; then
     case "$lower" in
       *.dmg|*.iso)
@@ -1172,7 +1180,7 @@ EOF
   volume_uuid="$(diskutil info -plist "$installer_slice" | plutil -extract VolumeUUID raw -o - - 2>/dev/null || true)"
   [[ -n "$volume_uuid" ]] || die "Restore completed, but installer VolumeUUID could not be rediscovered."
   diskutil info "$volume_uuid" >/dev/null || die "Restored installer could not be re-identified by UUID $volume_uuid."
-  diskutil mount "$esp_slice" >/dev/null
+  sudo diskutil mount "$esp_slice" >/dev/null
   efi_mount="$(diskutil info "$esp_slice" | awk -F': *' '/Mount Point/ {print $2; exit}')"
   [[ -d "$efi_mount" ]] || die "EFI partition did not mount."
   replace_boot_files "$efi_mount" "$build_root"
