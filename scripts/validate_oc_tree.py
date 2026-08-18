@@ -73,6 +73,17 @@ def main() -> int:
         if not (oc_root / "Drivers" / path).is_file():
             fail(errors, f"missing UEFI/Drivers file: {path}")
 
+    if "Ps2KeyboardDxe.efi" in seen_drivers:
+        input_config = config["UEFI"]["Input"]
+        if not input_config["KeySupport"]:
+            fail(errors, "Ps2KeyboardDxe requires UEFI/Input/KeySupport")
+        if input_config["KeySupportMode"] != "V1":
+            fail(errors, "Aspire 4310 PS/2 input requires KeySupportMode V1")
+
+    visibility = esp_root / "EFI" / "BOOT" / ".contentVisibility"
+    if not visibility.is_file() or visibility.read_bytes() != b"Disabled":
+        fail(errors, "EFI bootstrap must be hidden with .contentVisibility=Disabled")
+
     for entry in config["Misc"]["Tools"]:
         if entry.get("Enabled") and not (oc_root / "Tools" / entry["Path"]).is_file():
             fail(errors, f"missing Misc/Tools file: {entry['Path']}")

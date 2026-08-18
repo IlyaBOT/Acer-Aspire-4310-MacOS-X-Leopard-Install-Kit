@@ -49,6 +49,15 @@ Minimal driver set: `OpenRuntime.efi`, один HFS driver, `Ps2KeyboardDxe.efi`
 содержит нужную partition support, а документированная отдельная необходимость относится к
 10.7–10.9 recovery.
 
+Встроенная клавиатура Aspire работает через PS/2. Для `Ps2KeyboardDxe.efi` включены
+`KeySupport=true`, legacy input protocol `KeySupportMode=V1`, порог удержания клавиши `9`
+и `TakeoffDelay=10000`. Режим `Auto` на первом физическом тесте дошёл до picker, но не
+зарегистрировал клавиши.
+
+`EFI/BOOT/.contentVisibility` содержит точное значение `Disabled`. Это скрывает bootstrap
+OpenCore из его собственного picker и не позволяет тайм-ауту рекурсивно запустить
+`BOOTx64.efi`; установочный HFS+ раздел остаётся видимым и становится единственным пунктом.
+
 X64 auto использует `HfsPlusLegacy.efi` из pinned OcBinaryData commit: PE32+ x86-64 и без
 RDRAND path. IA32 auto использует `HfsPlus32.efi`: PE32 i386. `OpenHfsPlus.efi` остаётся
 source-available fallback. Два HFS drivers одновременно никогда не включаются.

@@ -802,6 +802,7 @@ build_opencore_variant() {
   safe_remove_generated "$build_root"
   mkdir -p "$esp/EFI/BOOT" "$oc_root/ACPI" "$oc_root/Drivers" "$oc_root/Kexts" "$oc_root/Tools" "$build_root/OpenDuet"
   cp -p "$arch_source/EFI/BOOT/"*.efi "$esp/EFI/BOOT/"
+  printf '%s' 'Disabled' >"$esp/EFI/BOOT/.contentVisibility"
   cp -p "$arch_source/EFI/OC/OpenCore.efi" "$oc_root/OpenCore.efi"
   cp -p "$arch_source/EFI/OC/Drivers/OpenRuntime.efi" "$oc_root/Drivers/OpenRuntime.efi"
   cp -p "$arch_source/EFI/OC/Drivers/Ps2KeyboardDxe.efi" "$oc_root/Drivers/Ps2KeyboardDxe.efi"

@@ -119,6 +119,7 @@ def main() -> int:
     boot["HideAuxiliary"] = False
     boot["PickerMode"] = "Builtin"
     boot["ShowPicker"] = True
+    boot["TakeoffDelay"] = 10_000
     boot["Timeout"] = 10
 
     debug = config["Misc"]["Debug"]
@@ -183,7 +184,10 @@ def main() -> int:
         }
         for driver in args.driver
     ]
-    config["UEFI"]["Input"]["KeySupport"] = True
+    input_config = config["UEFI"]["Input"]
+    input_config["KeyForgetThreshold"] = 9
+    input_config["KeySupport"] = True
+    input_config["KeySupportMode"] = "V1"
     config["UEFI"]["Output"]["ProvideConsoleGop"] = True
     config["UEFI"]["Output"]["Resolution"] = "Max"
     config["UEFI"]["Quirks"]["ReleaseUsbOwnership"] = True
