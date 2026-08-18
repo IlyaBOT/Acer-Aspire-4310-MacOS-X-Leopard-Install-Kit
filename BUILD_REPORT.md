@@ -1,6 +1,6 @@
 # Aspire 4310 build report
 
-Generated: 2026-08-18T22:30:00Z
+Generated: 2026-08-18T22:45:58Z
 
 ## Host
 
@@ -28,12 +28,12 @@ Generated: 2026-08-18T22:30:00Z
 - KernelArch: i386
 - KernelCache: Auto
 - CustomKernel: false
-- Runtime memory profile: off
+- Runtime memory profile: legacy
 - Boot preset: diagnostic
 - Kext set: minimal
 - SATA: native
 - ACPI: native
-- Duplicate APIC: native
+- Duplicate APIC: drop-duplicate
 
 ## Kexts
 

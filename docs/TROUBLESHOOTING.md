@@ -37,19 +37,19 @@ partition действительно HFS+, и installer содержит `System
 
 Если panic исчез, но Darwin 9.4 останавливается после `mig_table_max_displ = 79`, эта строка
 не является сообщением об ошибке: следующая ранняя инициализация почти не печатает лог.
-Сначала исключить EFI runtime, не меняя ACPI и kexts:
+Контрольный runtime-free тест уже выполнен: OpenCore дошёл до XNU без ошибки, после чего
+машина перезагрузилась до panic handler. Не использовать `--runtime off` как рабочий
+профиль. Следующий тест сохраняет legacy runtime и удаляет только вторую Phoenix MADT:
 
 ```bash
 ./prepare_aspire4310_macos.sh --update-efi --os leopard --bootloader opencore \
-  --runtime off --apic native --kext-set minimal \
+  --runtime legacy --apic drop-duplicate --kext-set minimal \
   --disk /dev/diskX --boot-slice /dev/diskXs1
 ```
 
-Если точка остановки не изменилась, вернуть `--runtime legacy` и удалить только известную
-дублирующую Phoenix MADT через `--apic drop-duplicate`. Третий отдельный тест —
-`--runtime off --apic drop-duplicate --kext-set smc`: он оставляет FakeSMC, но исключает
-AppleACPIPS2Nub/VoodooPS2 из kmod/mkext. Не объединять результаты разных вариантов без
-промежуточного фото и OpenCore DEBUG log.
+Если точка остановки не изменилась, оставить `legacy/drop-duplicate`, но переключиться на
+`--kext-set smc`: он оставляет FakeSMC и исключает AppleACPIPS2Nub/VoodooPS2 из kmod/mkext.
+Не объединять результаты разных вариантов без промежуточного фото и OpenCore DEBUG log.
 
 ## Still waiting for root device
 

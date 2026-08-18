@@ -131,16 +131,18 @@ OpenCore 1.0.7 поддерживает загрузку Mac OS X 10.4–10.5 с
 Физический IA32 DEBUG log сначала локализовал панику в MAT-разбитом descriptor
 `OpenRuntime.efi` с нулевым `VirtualStart`. Legacy write-unprotect убрал панику, но XNU 9.4
 затем воспроизводимо остановился сразу после `mig_table_max_displ = 79`. Поэтому Leopard
-`--runtime auto` теперь выбирает runtime-free профиль: `OpenRuntime.efi` не загружается,
-`RequestBootVarRouting=false`, а runtime memory quirks выключены. Старый профиль сохранён
-для контрольного теста как `--runtime legacy`; Snow Leopard auto использует `modern`.
+runtime-free тест без `OpenRuntime.efi` дошёл до XNU и вызвал немедленный аппаратный reset
+до panic handler. Поэтому `--runtime auto` для Leopard снова выбирает `legacy`:
+`OpenRuntime.efi` загружается, `EnableWriteUnprotector=true`, MAT rebuild выключен, а
+`RequestBootVarRouting=false`. Непригодный runtime-free вариант сохранён только как явный
+`--runtime off`; Snow Leopard auto использует `modern`.
 
 SysReport физического Aspire также содержит две MADT: основную `INTEL/CALISTGA` и вторую
-Phoenix `PTLTD/\t APIC`. Точечный тест удаляет только вторую таблицу:
+Phoenix `PTLTD/\t APIC`. Следующий профиль по умолчанию удаляет только вторую таблицу:
 
 ```bash
-./prepare_aspire4310_macos.sh --build --os leopard --runtime off \
-  --apic drop-duplicate --kext-set smc
+./prepare_aspire4310_macos.sh --build --os leopard --runtime legacy \
+  --apic drop-duplicate --kext-set minimal
 ```
 
 `--kext-set smc` оставляет только FakeSMC и исключает PS/2 kext metadata из ранней

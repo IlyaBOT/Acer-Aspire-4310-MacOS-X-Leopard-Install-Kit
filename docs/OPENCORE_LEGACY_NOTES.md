@@ -21,8 +21,7 @@
 ```text
 Booter/Quirks/FixupAppleEfiImages = true
 Booter/Quirks/RebuildAppleMemoryMap = false
-Booter/Quirks/EnableWriteUnprotector = false
-Booter/Quirks/ProvideCustomSlide = false
+Booter/Quirks/EnableWriteUnprotector = true
 Booter/Quirks/SetupVirtualMap = false
 Booter/Quirks/SyncRuntimePermissions = false
 Kernel/Emulate/DummyPowerManagement = true
@@ -56,16 +55,18 @@ runtime range занимает `0x5000` байт — столько же, ско
 `VirtualStart=0`, и Darwin 9.4 передаёт его в `pmap_map(0, ...)`. Legacy-профиль
 `RebuildAppleMemoryMap=false`, `SyncRuntimePermissions=false`,
 `EnableWriteUnprotector=true` убрал panic, но физический тест затем стабильно остановился
-после `mig_table_max_displ = 79`. Поэтому `--runtime auto` для Leopard теперь означает
-`off`: `OpenRuntime.efi` отсутствует, runtime quirks и custom slide выключены, а
-`RequestBootVarRouting=false`. `--runtime legacy` сохраняет воспроизводимость прошлого
-профиля; Snow Leopard auto сохраняет MAT-профиль `modern`.
+после `mig_table_max_displ = 79`. Контрольный `--runtime off` подтвердил, что OpenCore без
+ошибок передаёт управление XNU, но машина немедленно аппаратно перезагружается до panic
+handler. Поэтому `--runtime auto` для Leopard остаётся `legacy`, а runtime-free вариант
+доступен только явно. `RequestBootVarRouting=false` во всех OpenDuet-профилях. Snow Leopard
+auto сохраняет MAT-профиль `modern`.
 
 Firmware SysReport содержит две валидные MADT с одним IOAPIC: `INTEL/CALISTGA` длиной 104
 байта и Phoenix `PTLTD/\t APIC` длиной 90 байт, причём у IRQ0 различаются flags.
 `--apic drop-duplicate` создаёт точную ACPI/Delete запись по signature, OEM table ID и
-длине, удаляя только Phoenix-копию. По умолчанию остаётся `--apic native`, чтобы каждый
-физический A/B тест менял одну причину.
+длине, удаляя только Phoenix-копию. После отдельно проверенных `legacy/native` и
+`off/native` вариантов это следующий профиль по умолчанию; `--apic native` сохраняет
+контрольный путь без фильтрации.
 `DummyPowerManagement` — документированный OpenCore replacement для NullCPUPM, поэтому
 последний не добавляется. `LegacyCommpage` не нужен: CPU имеет SSSE3, а профиль i386.
 
@@ -75,8 +76,9 @@ vault можно сделать после стабилизации EFI.
 
 ## Drivers
 
-Runtime-free Leopard driver set: один HFS driver, `Ps2KeyboardDxe.efi` и
-`Ps2MouseDxe.efi`; `OpenRuntime.efi` добавляется только для `legacy`/`modern`.
+Стандартный Leopard driver set: `OpenRuntime.efi`, один HFS driver,
+`Ps2KeyboardDxe.efi` и `Ps2MouseDxe.efi`; `OpenRuntime.efi` отсутствует только в явно
+выбранном runtime-free режиме `off`.
 `OpenPartitionDxe` в 10.5/10.6 profile не добавляется: OpenDuet уже
 содержит нужную partition support, а документированная отдельная необходимость относится к
 10.7–10.9 recovery.

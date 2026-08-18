@@ -31,7 +31,7 @@ BOOT_PRESET="diagnostic"
 KEXT_SET="minimal"
 SATA_MODE="native"
 ACPI_MODE="native"
-APIC_MODE="native"
+APIC_MODE="drop-duplicate"
 RUNTIME_PROFILE="auto"
 RUNTIME_PROFILE_RESOLVED=""
 DISK=""
@@ -110,8 +110,8 @@ Build choices:
   --kext-set smc|minimal|full             default: minimal
   --sata native|injected                  default: native
   --acpi native|patched                   default: native
-  --apic native|drop-duplicate            default: native
-  --runtime auto|off|legacy|modern        default: auto (off for Leopard)
+  --apic native|drop-duplicate            default: drop-duplicate
+  --runtime auto|off|legacy|modern        default: auto (legacy for Leopard)
   --layout fresh|preserve                 default: fresh (whole disk is repartitioned)
   --boot-slice /dev/diskXs1               required by preserve layout/update-efi
   --installer-slice /dev/diskXs2          required by preserve layout; contents are erased
@@ -675,7 +675,7 @@ resolve_runtime_profile() {
   case "$RUNTIME_PROFILE" in
     auto)
       if [[ "$OS_PROFILE" == "leopard" ]]; then
-        RUNTIME_PROFILE_RESOLVED="off"
+        RUNTIME_PROFILE_RESOLVED="legacy"
       else
         RUNTIME_PROFILE_RESOLVED="modern"
       fi
