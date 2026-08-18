@@ -1129,22 +1129,26 @@ confirm_efi_update() {
 }
 
 mount_boot_slice_writable() {
-  local slice="$1" info mount_point read_only
+  local slice="$1" info mount_point read_only write_probe
   info="$(diskutil info "$slice")" || die "Cannot inspect boot slice: $slice"
   mount_point="$(printf '%s\n' "$info" | awk -F': *' '/Mount Point/ {print $2; exit}')"
-  read_only="$(printf '%s\n' "$info" | awk -F': *' '/Volume Read-Only/ {print $2; exit}')"
-  if [[ -n "$mount_point" && "$mount_point" != "Not mounted" && "$read_only" == "Yes" ]]; then
-    sudo diskutil unmount "$slice" >/dev/null
-    mount_point=""
+  if [[ -n "$mount_point" && "$mount_point" != "Not mounted" ]]; then
+    sudo diskutil unmount "$slice" >/dev/null \
+      || die "Cannot unmount boot slice before writable remount: $slice"
   fi
-  if [[ -z "$mount_point" || "$mount_point" == "Not mounted" ]]; then
-    sudo diskutil mount "$slice" >/dev/null
-  fi
+  sudo diskutil mount "$slice" >/dev/null \
+    || die "Cannot mount boot slice read-write: $slice"
   info="$(diskutil info "$slice")" || die "Cannot rediscover mounted boot slice: $slice"
   mount_point="$(printf '%s\n' "$info" | awk -F': *' '/Mount Point/ {print $2; exit}')"
   read_only="$(printf '%s\n' "$info" | awk -F': *' '/Volume Read-Only/ {print $2; exit}')"
-  [[ -d "$mount_point" && "$read_only" != "Yes" ]] \
-    || die "Boot slice is not mounted read-write: $slice"
+  [[ -d "$mount_point" ]] || die "Boot slice did not mount: $slice"
+  [[ "$read_only" != Yes* ]] || die "Boot slice is still mounted read-only: $slice"
+
+  write_probe="$mount_point/.aspire4310-write-test.$$"
+  sudo touch "$write_probe" \
+    || die "Boot slice rejected a write test after remount: $slice"
+  sudo rm -f -- "$write_probe" \
+    || die "Cannot remove boot-slice write test: $write_probe"
   printf '%s\n' "$mount_point"
 }
 
@@ -1278,9 +1282,7 @@ EOF
   volume_uuid="$(diskutil info -plist "$installer_slice" | plutil -extract VolumeUUID raw -o - - 2>/dev/null || true)"
   [[ -n "$volume_uuid" ]] || die "Restore completed, but installer VolumeUUID could not be rediscovered."
   diskutil info "$volume_uuid" >/dev/null || die "Restored installer could not be re-identified by UUID $volume_uuid."
-  sudo diskutil mount "$esp_slice" >/dev/null
-  efi_mount="$(diskutil info "$esp_slice" | awk -F': *' '/Mount Point/ {print $2; exit}')"
-  [[ -d "$efi_mount" ]] || die "EFI partition did not mount."
+  efi_mount="$(mount_boot_slice_writable "$esp_slice")"
   replace_boot_files "$efi_mount" "$build_root"
   disk_number="${DISK#/dev/disk}"
   boot_tool="$OC_CACHE_ROOT/Utilities/LegacyBoot/BootInstall_${OC_ARCH_NAME}.tool"

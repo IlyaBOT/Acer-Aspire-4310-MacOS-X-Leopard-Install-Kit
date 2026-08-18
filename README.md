@@ -118,6 +118,11 @@ EFI/OpenDuet на первом разделе:
   --disk /dev/diskX --boot-slice /dev/diskXs1
 ```
 
+Перед заменой скрипт всегда перемонтирует boot-раздел в режиме записи и проверяет его
+временным файлом. Поэтому ранее выполненный `diskutil mount readOnly` не требует ручного
+перемонтирования; при реально повреждённой или защищённой от записи FAT операция
+останавливается до удаления старого EFI.
+
 ## OpenCore choices
 
 Версия не зашита навсегда: `--download` получает latest stable release через официальный GitHub API, сохраняет URL/SHA-256/timestamp в `downloads/manifest.tsv`, а config генерируется из `Docs/Sample.plist` именно этого release и проверяется его же `ocvalidate`.
