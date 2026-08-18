@@ -93,6 +93,10 @@ def main() -> int:
         if not kernels.is_dir() or not any(path.is_file() for path in kernels.iterdir()):
             fail(errors, "CustomKernel is enabled but ESP/Kernels has no artifact")
 
+    kernel_arch = config["Kernel"]["Scheme"]["KernelArch"]
+    if kernel_arch.startswith("i386") and config["Booter"]["Quirks"]["SetupVirtualMap"]:
+        fail(errors, "SetupVirtualMap is incompatible with 32-bit kernels")
+
     if errors:
         for error in errors:
             print(f"ERROR: {error}", file=sys.stderr)

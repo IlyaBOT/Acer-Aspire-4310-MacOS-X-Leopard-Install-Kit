@@ -85,7 +85,7 @@ def main() -> int:
     booter["EnableWriteUnprotector"] = False
     booter["FixupAppleEfiImages"] = True
     booter["RebuildAppleMemoryMap"] = True
-    booter["SetupVirtualMap"] = True
+    booter["SetupVirtualMap"] = False
     booter["SyncRuntimePermissions"] = True
 
     config["ACPI"]["Add"] = [

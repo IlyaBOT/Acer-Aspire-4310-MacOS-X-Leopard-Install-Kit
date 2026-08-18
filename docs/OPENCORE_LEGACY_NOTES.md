@@ -17,7 +17,7 @@
 Booter/Quirks/FixupAppleEfiImages = true
 Booter/Quirks/RebuildAppleMemoryMap = true
 Booter/Quirks/EnableWriteUnprotector = false
-Booter/Quirks/SetupVirtualMap = true
+Booter/Quirks/SetupVirtualMap = false
 Booter/Quirks/SyncRuntimePermissions = true
 Kernel/Emulate/DummyPowerManagement = true
 Kernel/Scheme/CustomKernel = false (true only in separate custom build)
@@ -35,6 +35,10 @@ Misc/Security/Vault = Optional
 `FixupAppleEfiImages` нужен с современным строгим OpenDuet loader для старых Apple `boot.efi`.
 `RebuildAppleMemoryMap` исправляет ограничения старого XNU; вместе с современным memory
 attributes path выбраны `SyncRuntimePermissions=true` и `EnableWriteUnprotector=false`.
+`SetupVirtualMap=false` обязателен для Leopard/Snow Leopard профилей с `KernelArch=i386`:
+OpenCore документирует этот quirk как несовместимый с 32-битными ядрами. Первый физический
+тест с ошибочным значением `true` дошёл до Darwin 9.4 `RELEASE_I386`, после чего получил
+раннюю панику `pmap_enter: pv not in hash list` во время инициализации памяти.
 `DummyPowerManagement` — документированный OpenCore replacement для NullCPUPM, поэтому
 последний не добавляется. `LegacyCommpage` не нужен: CPU имеет SSSE3, а профиль i386.
 
