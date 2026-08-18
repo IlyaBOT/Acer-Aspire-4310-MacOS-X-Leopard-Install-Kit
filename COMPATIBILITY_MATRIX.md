@@ -1,10 +1,12 @@
 # Static compatibility matrix
 
-`Runtime` везде `NOT TESTED`, пока EFI не загружен на физическом Acer. Проверка i386 slice и
-plist metadata не является обещанием реальной работы.
+EFI уже дошёл до Leopard XNU на физическом Acer, но ядро пока не прошло ранний
+`machine_init`. Поэтому успешная инъекция kext ещё не является проверкой работы устройства.
 
 | Component | Leopard 10.5 i386 | Snow Leopard 10.6 i386 | Static evidence | Runtime |
 |---|---|---|---|---|
+| OpenCore 1.0.7 / OpenDuet IA32 | REQUIRED | CANDIDATE | upstream разрешает 10.4–10.5 i386 только с 32-bit firmware; PE32 i386 build validated | BUILT; PHYSICAL TEST PENDING |
+| OpenCore 1.0.7 / OpenDuet X64 | INCOMPATIBLE | CANDIDATE_NOT_DEFAULT | 10.5 i386 недоступен на 64-bit firmware по upstream compatibility rules | PHYSICAL PANIC in `pmap_enter` |
 | FakeSMC (`org.netkas.fakesmc`, v1) | LIKELY_COMPATIBLE | LIKELY_COMPATIBLE | universal i386+x86_64; Darwin 7/8 KPI floors | NOT TESTED |
 | AppleACPIPS2Nub 1.0.0d1 | LIKELY_COMPATIBLE | LIKELY_COMPATIBLE | universal i386+x86_64; Darwin 8 KPI floors | NOT TESTED |
 | VoodooPS2Controller 1.1.0 + plugins | LIKELY_COMPATIBLE | LIKELY_COMPATIBLE | parent/plugins contain i386; Darwin 8 KPI floors | NOT TESTED |

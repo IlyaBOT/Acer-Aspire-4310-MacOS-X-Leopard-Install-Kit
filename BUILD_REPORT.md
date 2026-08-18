@@ -1,6 +1,6 @@
 # Aspire 4310 build report
 
-Generated: 2026-08-17T22:05:51Z
+Generated: 2026-08-18T00:37:04Z
 
 ## Host
 
@@ -22,8 +22,8 @@ Generated: 2026-08-17T22:05:51Z
 - OpenCore: 1.0.7 DEBUG
 - OcBinaryData commit: e74e533d8f89c1d5014cfb47c185502bf415741f
 - Legacy-Kexts candidate commit: 4dfc274111abdc94e94498d1e76d9354f3700fc9
-- OpenDuet: X64
-- HFS driver: HfsPlusLegacy.efi
+- OpenDuet: IA32
+- HFS driver: HfsPlus32.efi
 - Kernel profile: vanilla
 - KernelArch: i386
 - KernelCache: Auto

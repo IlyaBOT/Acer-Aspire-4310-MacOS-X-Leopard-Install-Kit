@@ -11,6 +11,11 @@
 Скрипт запрашивает latest release динамически. Каждый build создаётся из `Sample.plist` этого
 же cache release и валидируется его же `ocvalidate`.
 
+Для Leopard выбирается OpenCore/OpenDuet IA32 независимо от поддержки Intel 64 процессором.
+По документации OpenCore 1.0.7, Mac OS X 10.4–10.5 с `KernelArch=i386` поддерживается только
+на 32-битном firmware path. Поэтому явное сочетание `--os leopard --oc-arch x64` считается
+ошибкой конфигурации и отклоняется до сборки.
+
 ## Leopard-specific config
 
 ```text
@@ -39,6 +44,10 @@ attributes path выбраны `SyncRuntimePermissions=true` и `EnableWriteUnpr
 OpenCore документирует этот quirk как несовместимый с 32-битными ядрами. Первый физический
 тест с ошибочным значением `true` дошёл до Darwin 9.4 `RELEASE_I386`, после чего получил
 раннюю панику `pmap_enter: pv not in hash list` во время инициализации памяти.
+Повторный тест с исправленным quirk, но OpenDuet X64 дал ту же панику. Backtrace проходит
+через `machine_init` и `pmap_map`; EFI runtime descriptor передаётся ядру с нулевым
+`VirtualStart` и сталкивается со служебной low-memory mapping XNU. Это подтвердило, что
+Leopard нужен весь IA32 boot path, а не только `KernelArch=i386` внутри X64 OpenCore.
 `DummyPowerManagement` — документированный OpenCore replacement для NullCPUPM, поэтому
 последний не добавляется. `LegacyCommpage` не нужен: CPU имеет SSSE3, а профиль i386.
 
@@ -60,10 +69,12 @@ Minimal driver set: `OpenRuntime.efi`, один HFS driver, `Ps2KeyboardDxe.efi`
 
 `EFI/BOOT/.contentVisibility` содержит точное значение `Disabled`. Это скрывает bootstrap
 OpenCore из его собственного picker и не позволяет тайм-ауту рекурсивно запустить
-`BOOTx64.efi`; установочный HFS+ раздел остаётся видимым и становится единственным пунктом.
+архитектурный `BOOT*.efi`; установочный HFS+ раздел остаётся видимым и становится
+единственным пунктом.
 
-X64 auto использует `HfsPlusLegacy.efi` из pinned OcBinaryData commit: PE32+ x86-64 и без
-RDRAND path. IA32 auto использует `HfsPlus32.efi`: PE32 i386. `OpenHfsPlus.efi` остаётся
+IA32 auto для Leopard использует `HfsPlus32.efi`: PE32 i386. X64 для совместимых профилей
+использует `HfsPlusLegacy.efi` из pinned OcBinaryData commit: PE32+ x86-64 и без RDRAND
+path. `OpenHfsPlus.efi` остаётся
 source-available fallback. Два HFS drivers одновременно никогда не включаются.
 
 ## Debug

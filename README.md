@@ -113,7 +113,13 @@ cp DSDT.aml input/acpi/
 
 Версия не зашита навсегда: `--download` получает latest stable release через официальный GitHub API, сохраняет URL/SHA-256/timestamp в `downloads/manifest.tsv`, а config генерируется из `Docs/Sample.plist` именно этого release и проверяется его же `ocvalidate`.
 
-Для Celeron M 520 подтверждены Intel 64, SSE3 и SSSE3, поэтому `--oc-arch auto` выбирает OpenDuet X64. Leopard всё равно использует `KernelArch=i386`. Альтернатива остаётся доступна:
+Наличие Intel 64 у Celeron M 520 не означает, что для Leopard подходит OpenDuet X64.
+OpenCore 1.0.7 поддерживает загрузку Mac OS X 10.4–10.5 с `KernelArch=i386` только через
+32-битную firmware path, поэтому `--oc-arch auto` выбирает IA32. Явный X64 для Leopard
+отклоняется до сборки: на физическом Aspire такой смешанный вариант доходил до XNU, но
+падал в `pmap_enter: pv not in hash list` при обработке EFI runtime map.
+
+Эквивалентная явная команда:
 
 ```bash
 ./prepare_aspire4310_macos.sh --build --os leopard --oc-arch ia32
@@ -121,8 +127,8 @@ cp DSDT.aml input/acpi/
 
 HFS auto-selection:
 
-- X64: `HfsPlusLegacy.efi` (нет требования RDRAND);
-- IA32: `HfsPlus32.efi`;
+- IA32: `HfsPlus32.efi` (автоматический выбор для Leopard);
+- X64: `HfsPlusLegacy.efi` (только для совместимых профилей; нет требования RDRAND);
 - явный source-available fallback: `--hfs-driver openhfs`.
 
 Одновременно включается ровно один HFS driver.

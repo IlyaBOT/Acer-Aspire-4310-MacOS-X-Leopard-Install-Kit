@@ -96,7 +96,7 @@ Preserve an existing first FAT boot partition and replace only partition 2:
 
 Build choices:
   --bootloader auto|opencore|chameleon    default: auto (OpenCore first)
-  --oc-arch auto|ia32|x64                default: auto (target X64)
+  --oc-arch auto|ia32|x64                default: auto (IA32 for i386 profiles)
   --hfs-driver auto|legacy|32|openhfs     default: auto
   --kernel auto|vanilla|custom            default: auto
   --boot-preset normal|verbose|safe|diagnostic
@@ -584,7 +584,18 @@ PY
 
 resolve_oc_arch() {
   case "$OC_ARCH" in
-    auto|x64) OC_ARCH_DIR="X64"; OC_ARCH_NAME="X64"; OC_KERNEL_ARCH="x86_64" ;;
+    auto)
+      if [[ "$KERNEL_ARCH" == "i386" ]]; then
+        OC_ARCH_DIR="IA32"; OC_ARCH_NAME="IA32"; OC_KERNEL_ARCH="i386"
+      else
+        OC_ARCH_DIR="X64"; OC_ARCH_NAME="X64"; OC_KERNEL_ARCH="x86_64"
+      fi
+      ;;
+    x64)
+      [[ "$OS_PROFILE" != "leopard" ]] \
+        || die "Leopard 10.5 i386 requires IA32 OpenCore/OpenDuet; use --oc-arch auto or ia32."
+      OC_ARCH_DIR="X64"; OC_ARCH_NAME="X64"; OC_KERNEL_ARCH="x86_64"
+      ;;
     ia32) OC_ARCH_DIR="IA32"; OC_ARCH_NAME="IA32"; OC_KERNEL_ARCH="i386" ;;
     *) die "Invalid --oc-arch: $OC_ARCH" ;;
   esac
@@ -945,8 +956,8 @@ build_chameleon() {
 run_build() {
   load_os_profile
   validate_shell_sources
-  load_current_sources
   resolve_oc_arch
+  load_current_sources
   case "$BOOTLOADER" in
     auto|opencore)
       case "$KERNEL_MODE" in
@@ -1130,8 +1141,9 @@ run_make_usb() {
   [[ -n "$RETAIL" ]] || RETAIL="$(auto_retail_source || true)"
   [[ -n "$RETAIL" && -e "$RETAIL" ]] || die "Retail source not found; pass --retail or place the documented image in input/."
   [[ "$BOOTLOADER" == auto || "$BOOTLOADER" == opencore ]] || die "Automated GPT USB deployment currently supports the OpenCore backend; Chameleon output remains a manual fallback."
-  load_current_sources
+  load_os_profile
   resolve_oc_arch
+  load_current_sources
   run_build
   deploy_variant="vanilla"
   [[ "$KERNEL_MODE" == "custom" ]] && deploy_variant="custom"

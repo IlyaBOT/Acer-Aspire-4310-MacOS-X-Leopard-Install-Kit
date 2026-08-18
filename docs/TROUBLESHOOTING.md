@@ -4,7 +4,8 @@
 
 Проверить GPT/ESP, root `boot`, соответствие `bootX64`/`bootIA32`, запуск matching
 BootInstall tool, `EFI/OC/OpenCore.efi`, BIOS USB/F12 и DEBUG log. Для подтверждённого
-Celeron M 520 сначала X64; IA32 — контролируемый A/B fallback.
+Celeron M 520 и Leopard использовать IA32: поддержка Intel 64 процессором не отменяет
+требование 32-битного firmware path для XNU 10.4–10.5.
 
 ## Picker появился, installer не виден
 
@@ -21,6 +22,11 @@ partition действительно HFS+, и installer содержит `System
 
 Проверить `KernelArch=i386`, `KernelCache=Auto`, `RebuildAppleMemoryMap=true`, FakeSMC и
 `DummyPowerManagement=true`. Сначала vanilla; custom kernel — только отдельным A/B output.
+
+Если Leopard падает в `pmap_enter: pv not in hash list` из `machine_init`/`pmap_map`, проверить
+не только `SetupVirtualMap=false`, но и весь boot path: `OpenCore.efi`, `BOOTIA32.efi`, root
+`boot` и установленный OpenDuet должны быть IA32. Сочетание X64 OpenDuet с
+`KernelArch=i386` для Leopard не поддерживается.
 
 ## Still waiting for root device
 
