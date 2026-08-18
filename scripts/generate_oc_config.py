@@ -82,11 +82,19 @@ def main() -> int:
     clear_samples(config)
 
     booter = config["Booter"]["Quirks"]
-    booter["EnableWriteUnprotector"] = False
     booter["FixupAppleEfiImages"] = True
-    booter["RebuildAppleMemoryMap"] = True
     booter["SetupVirtualMap"] = False
-    booter["SyncRuntimePermissions"] = True
+    if args.os == "leopard":
+        # Darwin 9 i386 cannot consume the MAT-split OpenRuntime descriptors emitted by
+        # RebuildAppleMemoryMap on OpenDuet: boot.efi leaves their VirtualStart at zero and
+        # XNU panics in pmap_map. Keep OpenRuntime, but use its legacy write-unprotect path.
+        booter["EnableWriteUnprotector"] = True
+        booter["RebuildAppleMemoryMap"] = False
+        booter["SyncRuntimePermissions"] = False
+    else:
+        booter["EnableWriteUnprotector"] = False
+        booter["RebuildAppleMemoryMap"] = True
+        booter["SyncRuntimePermissions"] = True
 
     config["ACPI"]["Add"] = [
         {"Comment": "User-supplied ACPI table", "Enabled": True, "Path": path}

@@ -743,6 +743,7 @@ Generated: $(date -u '+%Y-%m-%dT%H:%M:%SZ')
 - KernelArch: i386
 - KernelCache: Auto
 - CustomKernel: $([[ "$kernel_variant" == custom ]] && printf true || printf false)
+- Runtime memory profile: $([[ "$OS_PROFILE" == leopard ]] && printf 'legacy write-unprotect' || printf 'MAT rebuild')
 - Boot preset: $BOOT_PRESET
 - Kext set: $KEXT_SET
 - SATA: $SATA_MODE

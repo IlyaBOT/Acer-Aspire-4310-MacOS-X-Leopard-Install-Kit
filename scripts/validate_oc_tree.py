@@ -94,8 +94,17 @@ def main() -> int:
             fail(errors, "CustomKernel is enabled but ESP/Kernels has no artifact")
 
     kernel_arch = config["Kernel"]["Scheme"]["KernelArch"]
-    if kernel_arch.startswith("i386") and config["Booter"]["Quirks"]["SetupVirtualMap"]:
+    booter_quirks = config["Booter"]["Quirks"]
+    if kernel_arch.startswith("i386") and booter_quirks["SetupVirtualMap"]:
         fail(errors, "SetupVirtualMap is incompatible with 32-bit kernels")
+
+    if config["Kernel"]["Emulate"]["MinKernel"].startswith("9."):
+        if not booter_quirks["EnableWriteUnprotector"]:
+            fail(errors, "Leopard requires the legacy OpenRuntime write-unprotect path")
+        if booter_quirks["RebuildAppleMemoryMap"]:
+            fail(errors, "Leopard cannot use the MAT-split runtime memory map")
+        if booter_quirks["SyncRuntimePermissions"]:
+            fail(errors, "Leopard cannot use MAT runtime permission syncing")
 
     if errors:
         for error in errors:

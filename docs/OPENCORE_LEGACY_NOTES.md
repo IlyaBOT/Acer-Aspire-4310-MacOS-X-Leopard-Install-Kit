@@ -20,10 +20,10 @@
 
 ```text
 Booter/Quirks/FixupAppleEfiImages = true
-Booter/Quirks/RebuildAppleMemoryMap = true
-Booter/Quirks/EnableWriteUnprotector = false
+Booter/Quirks/RebuildAppleMemoryMap = false
+Booter/Quirks/EnableWriteUnprotector = true
 Booter/Quirks/SetupVirtualMap = false
-Booter/Quirks/SyncRuntimePermissions = true
+Booter/Quirks/SyncRuntimePermissions = false
 Kernel/Emulate/DummyPowerManagement = true
 Kernel/Scheme/CustomKernel = false (true only in separate custom build)
 Kernel/Scheme/FuzzyMatch = true
@@ -38,8 +38,6 @@ Misc/Security/Vault = Optional
 ```
 
 `FixupAppleEfiImages` нужен с современным строгим OpenDuet loader для старых Apple `boot.efi`.
-`RebuildAppleMemoryMap` исправляет ограничения старого XNU; вместе с современным memory
-attributes path выбраны `SyncRuntimePermissions=true` и `EnableWriteUnprotector=false`.
 `SetupVirtualMap=false` обязателен для Leopard/Snow Leopard профилей с `KernelArch=i386`:
 OpenCore документирует этот quirk как несовместимый с 32-битными ядрами. Первый физический
 тест с ошибочным значением `true` дошёл до Darwin 9.4 `RELEASE_I386`, после чего получил
@@ -48,6 +46,16 @@ OpenCore документирует этот quirk как несовместим
 через `machine_init` и `pmap_map`; EFI runtime descriptor передаётся ядру с нулевым
 `VirtualStart` и сталкивается со служебной low-memory mapping XNU. Это подтвердило, что
 Leopard нужен весь IA32 boot path, а не только `KernelArch=i386` внутри X64 OpenCore.
+
+Полный DEBUG log с IA32 path показал следующий источник оставшейся паники: OpenRuntime
+успешно загружается, `MAT support is 1`, а активны `RBMAP=1` и `RTPERMS=1`. Падающий
+runtime range занимает `0x5000` байт — столько же, сколько четыре страницы `.text` и одна
+страница `.rdata` в IA32 `OpenRuntime.efi`. Созданный MAT-разбиением descriptor остаётся с
+`VirtualStart=0`, и Darwin 9.4 передаёт его в `pmap_map(0, ...)`. Поэтому Leopard использует
+legacy-профиль OpenRuntime: `RebuildAppleMemoryMap=false`, `SyncRuntimePermissions=false` и
+`EnableWriteUnprotector=true`. Это целевой физический A/B fix, а не утверждение об успешной
+загрузке: следующий boot должен подтвердить результат. Snow Leopard сохраняет MAT-профиль,
+пока отдельный тест не покажет обратное.
 `DummyPowerManagement` — документированный OpenCore replacement для NullCPUPM, поэтому
 последний не добавляется. `LegacyCommpage` не нужен: CPU имеет SSSE3, а профиль i386.
 

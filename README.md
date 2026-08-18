@@ -119,6 +119,12 @@ OpenCore 1.0.7 поддерживает загрузку Mac OS X 10.4–10.5 с
 отклоняется до сборки: на физическом Aspire такой смешанный вариант доходил до XNU, но
 падал в `pmap_enter: pv not in hash list` при обработке EFI runtime map.
 
+Физический IA32 DEBUG log локализовал оставшуюся панику в MAT-разбитом descriptor
+`OpenRuntime.efi` с нулевым `VirtualStart`. Поэтому Leopard автоматически получает legacy
+runtime profile: `EnableWriteUnprotector=true`, `RebuildAppleMemoryMap=false`,
+`SyncRuntimePermissions=false`, `SetupVirtualMap=false`. Это следующий диагностический
+профиль; успешная загрузка XNU ещё должна быть подтверждена на ноутбуке.
+
 Эквивалентная явная команда:
 
 ```bash

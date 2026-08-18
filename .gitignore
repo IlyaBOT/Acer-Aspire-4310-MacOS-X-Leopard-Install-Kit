@@ -30,3 +30,6 @@ output/
 
 # Local safety snapshots are intentionally retained but not committed.
 backup/
+
+# OpenCore DEBUG logs may contain disk GUIDs and SMBIOS identifiers.
+opencore-*.txt

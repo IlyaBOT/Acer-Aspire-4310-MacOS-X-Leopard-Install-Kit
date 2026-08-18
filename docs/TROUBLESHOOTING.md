@@ -20,13 +20,20 @@ partition действительно HFS+, и installer содержит `System
 
 ## Kernel стартует и падает
 
-Проверить `KernelArch=i386`, `KernelCache=Auto`, `RebuildAppleMemoryMap=true`, FakeSMC и
-`DummyPowerManagement=true`. Сначала vanilla; custom kernel — только отдельным A/B output.
+Проверить `KernelArch=i386`, `KernelCache=Auto`, FakeSMC и `DummyPowerManagement=true`.
+Сначала vanilla; custom kernel — только отдельным A/B output.
 
 Если Leopard падает в `pmap_enter: pv not in hash list` из `machine_init`/`pmap_map`, проверить
 не только `SetupVirtualMap=false`, но и весь boot path: `OpenCore.efi`, `BOOTIA32.efi`, root
 `boot` и установленный OpenDuet должны быть IA32. Сочетание X64 OpenDuet с
 `KernelArch=i386` для Leopard не поддерживается.
+
+Если полный IA32 path уже подтверждён, посмотреть DEBUG log на `MAT support is 1`,
+`RBMAP=1` и `RTPERMS=1`. Для обнаруженного на Aspire случая падающий runtime descriptor
+имеет `VirtualStart=0` и размер `0x5000`, совпадающий с executable/read-only частью IA32
+`OpenRuntime.efi`. Пересобрать текущий Leopard profile: генератор должен выставить
+`EnableWriteUnprotector=true`, `RebuildAppleMemoryMap=false`,
+`SyncRuntimePermissions=false`. Не включать `SetupVirtualMap`: он несовместим с i386.
 
 ## Still waiting for root device
 
