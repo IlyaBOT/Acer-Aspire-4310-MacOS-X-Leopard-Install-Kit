@@ -1,4 +1,8 @@
-# Сбор hardware IDs с Acer Aspire 4310
+# Hardware IDs физического Acer Aspire 4310
+
+Снимок с Linux получен 2026-08-19. Точные значения перенесены в
+`config/hardware-ids.conf`; DMI serial/UUID намеренно не сохраняются в Git. Повторный сбор
+нужен только после замены устройства или платы.
 
 Загрузите любой современный Linux LiveUSB и сохраните вывод без редактирования:
 
@@ -22,6 +26,4 @@ lscpu > lscpu.txt
 - modem, если он присутствует;
 - PS/2/Synaptics input и battery/ACPI warnings.
 
-Перенесите точные `vvvv:dddd` и `VID:PID` в `config/hardware-ids.conf`. Значения `UNKNOWN`
-не блокируют minimal boot build. Не подставляйте IDs из другого Aspire 4310: комплектации
-менялись.
+Не подставляйте IDs из другого Aspire 4310: комплектации менялись.

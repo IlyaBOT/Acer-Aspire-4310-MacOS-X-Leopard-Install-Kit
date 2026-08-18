@@ -8,14 +8,14 @@ Intel `Celeron M Processor 500 Series Datasheet`, document 316205-003 (September
 - SSE, SSE2, SSE3 и SSSE3;
 - семейство поддерживается ICH7M-era платформой.
 
-Поэтому основной OpenDuet build — X64. Это не означает 64-bit Leopard kernel: OpenCore 1.0.7
-документирует, что Mac OS X 10.5 не имеет x86_64 kernel и требует i386 kexts/patches. В config
-используется `KernelArch=i386` и `KernelCache=Auto` (для 10.5 OpenCore автоматически выбирает
-поддерживаемый Mkext вместо неподдерживаемой V1 prelinked injection).
+Наличие Intel 64 не делает X64 OpenDuet пригодным для Leopard. Для Mac OS X 10.5 OpenCore
+использует целиком IA32 firmware path, `KernelArch=i386` и `KernelCache=Auto` (для 10.5
+автоматически выбирается поддерживаемый Mkext вместо V1 prelinked injection).
 
 Intel PCN 107423-00 документирует перевод Celeron M 520 с Merom B2 на Merom-L A stepping и
-прямо говорит, что CPUID меняется. Поэтому единственный CPUID нельзя честно приписать
-конкретному физическому ноутбуку по названию SKU. `TARGET_CPU_CPUID=VERIFY_ON_PHYSICAL_TARGET`.
+прямо говорит, что CPUID меняется. Linux на физическом ноутбуке снял family 6, model 15,
+stepping 6, то есть CPUID `0x000006F6`; также подтверждены одно ядро, 133 MHz base clock,
+PAE, NX, Intel 64 и SSSE3.
 
 Получить его можно с Linux LiveUSB:
 
@@ -31,7 +31,8 @@ cpuid -1 2>/dev/null || true
 TARGET_CPU_SUPPORTS_LONG_MODE=YES
 TARGET_CPU_SUPPORTS_SSE3=YES
 TARGET_CPU_SUPPORTS_SSSE3=YES
-TARGET_CPU_CPUID=VERIFY_ON_PHYSICAL_TARGET
-OpenDuet default=X64
+TARGET_CPU_CPUID=0x000006F6
+OpenDuet default=IA32
 Leopard KernelArch=i386
+Leopard boot-args include arch=i386 -legacy cpus=1
 ```

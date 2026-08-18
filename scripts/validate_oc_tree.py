@@ -103,6 +103,14 @@ def main() -> int:
         fail(errors, "OpenDuet must not enable RequestBootVarRouting")
 
     if config["Kernel"]["Emulate"]["MinKernel"].startswith("9."):
+        boot_args = set(
+            config["NVRAM"]["Add"]["7C436110-AB2A-4BBB-A880-FE41995C9F82"]
+            ["boot-args"]
+            .split()
+        )
+        for required_arg in ("arch=i386", "-legacy", "cpus=1"):
+            if required_arg not in boot_args:
+                fail(errors, f"Leopard boot-args must contain {required_arg}")
         if booter_quirks["RebuildAppleMemoryMap"]:
             fail(errors, "Leopard cannot use the MAT-split runtime memory map")
         if booter_quirks["SyncRuntimePermissions"]:

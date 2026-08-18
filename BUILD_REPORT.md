@@ -1,6 +1,6 @@
 # Aspire 4310 build report
 
-Generated: 2026-08-18T22:45:58Z
+Generated: 2026-08-18T23:19:21Z
 
 ## Host
 
@@ -12,8 +12,8 @@ Generated: 2026-08-18T22:45:58Z
 ## Target
 
 - Model: Acer Aspire 4310
-- CPU: Intel Celeron M 520 (Intel 64 and SSSE3 confirmed; physical CPUID still to collect)
-- Chipset/GPU: Intel 943GML Express / ICH7M-era platform / Intel GMA950
+- CPU: Intel Celeron M 520 (CPUID 0x000006F6; one physical core; Intel 64 and SSSE3)
+- Chipset/GPU: Intel 943/940GML 8086:27A0 / ICH7-M 8086:27B9 / Intel GMA950
 
 ## OS and bootloader
 
@@ -27,6 +27,7 @@ Generated: 2026-08-18T22:45:58Z
 - Kernel profile: vanilla
 - KernelArch: i386
 - KernelCache: Auto
+- Boot args: -v keepsyms=1 debug=0x100 arch=i386 -legacy cpus=1
 - CustomKernel: false
 - Runtime memory profile: legacy
 - Boot preset: diagnostic
@@ -55,8 +56,8 @@ Vanilla mode: no kernel was copied or replaced; the retail source remains unmodi
 
 ## Known unresolved hardware
 
-BCM5787M Ethernet, exact Wi-Fi PCI ID, ALC268 codec confirmation, battery ACPI,
-Bluetooth, FireWire, webcam and modem remain post-install/runtime work.
+Hardware IDs are confirmed from the physical target. Ethernet, Wi-Fi, audio, battery,
+Bluetooth, FireWire, webcam and modem support remain post-install/runtime work.
 
 ## Validation
 

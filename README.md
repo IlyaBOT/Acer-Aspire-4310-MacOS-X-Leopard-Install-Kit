@@ -127,6 +127,8 @@ OpenCore 1.0.7 поддерживает загрузку Mac OS X 10.4–10.5 с
 32-битную firmware path, поэтому `--oc-arch auto` выбирает IA32. Явный X64 для Leopard
 отклоняется до сборки: на физическом Aspire такой смешанный вариант доходил до XNU, но
 падал в `pmap_enter: pv not in hash list` при обработке EFI runtime map.
+Leopard config дополнительно фиксирует `arch=i386 -legacy cpus=1`: `KernelArch` выбирает
+i386-срез, а `-legacy` не даёт Darwin 9 снова включить IA32e на EM64T-процессоре.
 
 Физический IA32 DEBUG log сначала локализовал панику в MAT-разбитом descriptor
 `OpenRuntime.efi` с нулевым `VirtualStart`. Legacy write-unprotect убрал панику, но XNU 9.4
@@ -137,8 +139,9 @@ runtime-free тест без `OpenRuntime.efi` дошёл до XNU и вызва
 `RequestBootVarRouting=false`. Непригодный runtime-free вариант сохранён только как явный
 `--runtime off`; Snow Leopard auto использует `modern`.
 
-SysReport физического Aspire также содержит две MADT: основную `INTEL/CALISTGA` и вторую
-Phoenix `PTLTD/\t APIC`. Следующий профиль по умолчанию удаляет только вторую таблицу:
+SysReport и независимый Linux ACPI dump физического Aspire содержат две MADT. Linux прямо
+помечает это как BIOS bug, выбирает первую `INTEL/CALISTGA`, а вторую Phoenix
+`PTLTD/\t APIC` не использует. Профиль удаляет только вторую таблицу:
 
 ```bash
 ./prepare_aspire4310_macos.sh --build --os leopard --runtime legacy \

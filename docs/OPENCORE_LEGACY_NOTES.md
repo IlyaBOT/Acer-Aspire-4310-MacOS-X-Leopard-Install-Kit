@@ -47,6 +47,9 @@ OpenCore документирует этот quirk как несовместим
 через `machine_init` и `pmap_map`; EFI runtime descriptor передаётся ядру с нулевым
 `VirtualStart` и сталкивается со служебной low-memory mapping XNU. Это подтвердило, что
 Leopard нужен весь IA32 boot path, а не только `KernelArch=i386` внутри X64 OpenCore.
+Физический CPU оказался CPUID `06F6`, один core, с Intel 64. Поэтому Leopard boot args
+явно содержат `arch=i386 -legacy cpus=1`: `-legacy` предотвращает повторное включение
+IA32e внутри Darwin 9, а `cpus=1` соответствует реальной топологии.
 
 Полный DEBUG log с IA32 path показал следующий источник оставшейся паники: OpenRuntime
 успешно загружается, `MAT support is 1`, а активны `RBMAP=1` и `RTPERMS=1`. Падающий
@@ -63,6 +66,8 @@ auto сохраняет MAT-профиль `modern`.
 
 Firmware SysReport содержит две валидные MADT с одним IOAPIC: `INTEL/CALISTGA` длиной 104
 байта и Phoenix `PTLTD/\t APIC` длиной 90 байт, причём у IRQ0 различаются flags.
+Linux 5.10 на том же ноутбуке сообщает `BIOS bug: multiple APIC/MADT found, using 0` и
+успешно работает с первой таблицей; её IOAPIC расположен по `0xFEC00000`, GSI 0–23.
 `--apic drop-duplicate` создаёт точную ACPI/Delete запись по signature, OEM table ID и
 длине, удаляя только Phoenix-копию. После отдельно проверенных `legacy/native` и
 `off/native` вариантов это следующий профиль по умолчанию; `--apic native` сохраняет

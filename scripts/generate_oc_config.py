@@ -21,6 +21,18 @@ BOOT_ARGS = {
     "diagnostic": "-v keepsyms=1 debug=0x100",
 }
 
+LEOPARD_BOOT_ARGS = "arch=i386 -legacy cpus=1"
+
+
+def boot_args_for(os_profile: str, preset: str) -> str:
+    parts = [BOOT_ARGS[preset]]
+    if os_profile == "leopard":
+        # KernelArch selects the i386 Mach-O slice, while -legacy prevents Darwin 9
+        # from entering IA32e internally on this EM64T Celeron M.  The physical CPU
+        # is CPUID 06F6 with one core, so keep the early topology deterministic too.
+        parts.append(LEOPARD_BOOT_ARGS)
+    return " ".join(part for part in parts if part)
+
 
 def clear_samples(config: dict) -> None:
     config["ACPI"]["Add"] = []
@@ -172,7 +184,7 @@ def main() -> int:
             "DefaultBackgroundColor": b"\x00\x00\x00\x00"
         },
         "7C436110-AB2A-4BBB-A880-FE41995C9F82": {
-            "boot-args": BOOT_ARGS[args.boot_preset],
+            "boot-args": boot_args_for(args.os, args.boot_preset),
             "prev-lang:kbd": b"en-US:0",
             "run-efi-updater": "No",
         },

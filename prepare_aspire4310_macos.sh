@@ -733,7 +733,14 @@ ocvalidate_path() {
 
 write_build_report() {
   local build_root="$1" kernel_variant="$2" validation="$3"
-  local bundle bundle_id version architectures minimum_os digest static_status kernel_file
+  local bundle bundle_id version architectures minimum_os digest static_status kernel_file boot_args
+  boot_args="$(python3 - "$build_root/ESP/EFI/OC/config.plist" <<'PY'
+import plistlib, sys
+with open(sys.argv[1], "rb") as handle:
+    config = plistlib.load(handle)
+print(config["NVRAM"]["Add"]["7C436110-AB2A-4BBB-A880-FE41995C9F82"]["boot-args"])
+PY
+)"
   detect_host
   cat >"$build_root/BUILD_REPORT.md" <<EOF
 # Aspire 4310 build report
@@ -750,7 +757,7 @@ Generated: $(date -u '+%Y-%m-%dT%H:%M:%SZ')
 ## Target
 
 - Model: $TARGET_MODEL
-- CPU: $TARGET_CPU (Intel 64 and SSSE3 confirmed; physical CPUID still to collect)
+- CPU: $TARGET_CPU (CPUID $TARGET_CPU_CPUID; one physical core; Intel 64 and SSSE3)
 - Chipset/GPU: $TARGET_CHIPSET / $TARGET_GPU
 
 ## OS and bootloader
@@ -765,6 +772,7 @@ Generated: $(date -u '+%Y-%m-%dT%H:%M:%SZ')
 - Kernel profile: $kernel_variant
 - KernelArch: i386
 - KernelCache: Auto
+- Boot args: $boot_args
 - CustomKernel: $([[ "$kernel_variant" == custom ]] && printf true || printf false)
 - Runtime memory profile: $RUNTIME_PROFILE_RESOLVED
 - Boot preset: $BOOT_PRESET
@@ -812,8 +820,8 @@ EOF
 
 ## Known unresolved hardware
 
-BCM5787M Ethernet, exact Wi-Fi PCI ID, ALC268 codec confirmation, battery ACPI,
-Bluetooth, FireWire, webcam and modem remain post-install/runtime work.
+Hardware IDs are confirmed from the physical target. Ethernet, Wi-Fi, audio, battery,
+Bluetooth, FireWire, webcam and modem support remain post-install/runtime work.
 
 ## Validation
 
