@@ -31,6 +31,9 @@ BOOT_PRESET="diagnostic"
 KEXT_SET="minimal"
 SATA_MODE="native"
 ACPI_MODE="native"
+APIC_MODE="native"
+RUNTIME_PROFILE="auto"
+RUNTIME_PROFILE_RESOLVED=""
 DISK=""
 RETAIL=""
 AUDIT_VOLUME=""
@@ -85,6 +88,10 @@ Non-destructive project operations:
   ./prepare_aspire4310_macos.sh --build --os leopard
   ./prepare_aspire4310_macos.sh --build --os snowleopard
 
+Replace only EFI/OpenDuet on an existing USB (macOS only):
+  ./prepare_aspire4310_macos.sh --update-efi --os leopard --disk /dev/diskX \
+    --boot-slice /dev/diskXs1
+
 Destructive USB operation (macOS only; never automatic):
   ./prepare_aspire4310_macos.sh --make-usb --os leopard --disk /dev/diskX \
     --retail input/Leopard-Retail.iso
@@ -100,11 +107,13 @@ Build choices:
   --hfs-driver auto|legacy|32|openhfs     default: auto
   --kernel auto|vanilla|custom            default: auto
   --boot-preset normal|verbose|safe|diagnostic
-  --kext-set minimal|full                 default: minimal
+  --kext-set smc|minimal|full             default: minimal
   --sata native|injected                  default: native
   --acpi native|patched                   default: native
+  --apic native|drop-duplicate            default: native
+  --runtime auto|off|legacy|modern        default: auto (off for Leopard)
   --layout fresh|preserve                 default: fresh (whole disk is repartitioned)
-  --boot-slice /dev/diskXs1               required by preserve layout
+  --boot-slice /dev/diskXs1               required by preserve layout/update-efi
   --installer-slice /dev/diskXs2          required by preserve layout; contents are erased
   --protect-volume "/Volumes/KEEP"         repeatable mounted-volume safety guard
   --dry-run                               print destructive commands only
@@ -567,14 +576,13 @@ validate_plists() {
   local root="$1" plist count=0
   while IFS= read -r plist; do
     [[ -n "$plist" ]] || continue
-    if have_cmd plutil; then
-      plutil -lint "$plist" >/dev/null || die "Invalid plist: $plist"
-    else
-      python3 - "$plist" <<'PY' || die "Invalid plist: $plist"
+    python3 - "$plist" <<'PY' || die "Invalid plist: $plist"
 import plistlib,sys
 with open(sys.argv[1], 'rb') as handle:
     plistlib.load(handle)
 PY
+    if [[ "$(uname -s 2>/dev/null || true)" == "Darwin" ]] && have_cmd plutil; then
+      plutil -lint "$plist" >/dev/null || die "Apple plutil rejected plist: $plist"
     fi
     count=$((count + 1))
   done < <(find "$root" -type f -name '*.plist' -print | LC_ALL=C sort)
@@ -630,7 +638,8 @@ copy_profile_kexts() {
   while IFS=$'\t' read -r set_name source_path static_status purpose; do
     [[ -n "$set_name" && "$set_name" != \#* ]] || continue
     case "$set_name" in
-      minimal) ;;
+      smc) ;;
+      minimal) [[ "$KEXT_SET" != "smc" ]] || continue ;;
       full) [[ "$KEXT_SET" == "full" ]] || continue ;;
       sata) [[ "$SATA_MODE" == "injected" ]] || continue ;;
       *) continue ;;
@@ -660,6 +669,20 @@ PY
     fi
     log "Enabled kext candidate: $(basename "$target_bundle") [$static_status] — $purpose"
   done <"$manifest"
+}
+
+resolve_runtime_profile() {
+  case "$RUNTIME_PROFILE" in
+    auto)
+      if [[ "$OS_PROFILE" == "leopard" ]]; then
+        RUNTIME_PROFILE_RESOLVED="off"
+      else
+        RUNTIME_PROFILE_RESOLVED="modern"
+      fi
+      ;;
+    off|legacy|modern) RUNTIME_PROFILE_RESOLVED="$RUNTIME_PROFILE" ;;
+    *) die "--runtime must be auto, off, legacy, or modern" ;;
+  esac
 }
 
 copy_custom_kernels() {
@@ -743,11 +766,12 @@ Generated: $(date -u '+%Y-%m-%dT%H:%M:%SZ')
 - KernelArch: i386
 - KernelCache: Auto
 - CustomKernel: $([[ "$kernel_variant" == custom ]] && printf true || printf false)
-- Runtime memory profile: $([[ "$OS_PROFILE" == leopard ]] && printf 'legacy write-unprotect' || printf 'MAT rebuild')
+- Runtime memory profile: $RUNTIME_PROFILE_RESOLVED
 - Boot preset: $BOOT_PRESET
 - Kext set: $KEXT_SET
 - SATA: $SATA_MODE
 - ACPI: $ACPI_MODE
+- Duplicate APIC: $APIC_MODE
 
 ## Kexts
 
@@ -816,7 +840,9 @@ build_opencore_variant() {
   cp -p "$arch_source/EFI/BOOT/"*.efi "$esp/EFI/BOOT/"
   printf '%s' 'Disabled' >"$esp/EFI/BOOT/.contentVisibility"
   cp -p "$arch_source/EFI/OC/OpenCore.efi" "$oc_root/OpenCore.efi"
-  cp -p "$arch_source/EFI/OC/Drivers/OpenRuntime.efi" "$oc_root/Drivers/OpenRuntime.efi"
+  if [[ "$RUNTIME_PROFILE_RESOLVED" != "off" ]]; then
+    cp -p "$arch_source/EFI/OC/Drivers/OpenRuntime.efi" "$oc_root/Drivers/OpenRuntime.efi"
+  fi
   cp -p "$arch_source/EFI/OC/Drivers/Ps2KeyboardDxe.efi" "$oc_root/Drivers/Ps2KeyboardDxe.efi"
   cp -p "$arch_source/EFI/OC/Drivers/Ps2MouseDxe.efi" "$oc_root/Drivers/Ps2MouseDxe.efi"
   select_hfs_driver "$oc_root/Drivers"
@@ -849,12 +875,20 @@ build_opencore_variant() {
     --os "$OS_PROFILE"
     --kernel "$kernel_variant"
     --boot-preset "$BOOT_PRESET"
+    --runtime-profile "$RUNTIME_PROFILE_RESOLVED"
     --oc-version "$OC_VERSION"
-    --driver OpenRuntime.efi
+  )
+  if [[ "$RUNTIME_PROFILE_RESOLVED" != "off" ]]; then
+    config_args+=(--driver OpenRuntime.efi)
+  fi
+  config_args+=(
     --driver "$HFS_SELECTED"
     --driver Ps2KeyboardDxe.efi
     --driver Ps2MouseDxe.efi
   )
+  if [[ "$APIC_MODE" == "drop-duplicate" ]]; then
+    config_args+=(--drop-duplicate-apic)
+  fi
   while IFS= read -r relative; do
     [[ -n "$relative" ]] && config_args+=(--kext "$relative")
   done < <(collect_kext_arguments "$oc_root")
@@ -873,8 +907,8 @@ build_opencore_variant() {
     validation="- EFI references/dependencies: PASS"$'\n''- ocvalidate: NOT RUN on this host'
   fi
   plist_count="$(validate_plists "$build_root")"
-  if have_cmd plutil; then
-    validation="${validation}"$'\n'"- plutil ($plist_count files): PASS"
+  if [[ "$(uname -s 2>/dev/null || true)" == "Darwin" ]] && have_cmd plutil; then
+    validation="${validation}"$'\n'"- plistlib + Apple plutil ($plist_count files): PASS"
   else
     validation="${validation}"$'\n'"- plistlib ($plist_count files): PASS"
   fi
@@ -958,6 +992,7 @@ run_build() {
   load_os_profile
   validate_shell_sources
   resolve_oc_arch
+  resolve_runtime_profile
   load_current_sources
   case "$BOOTLOADER" in
     auto|opencore)
@@ -1024,6 +1059,17 @@ assert_preserve_layout() {
     || die "The preserved first partition must be FAT32/EFI: $BOOT_SLICE"
 }
 
+assert_boot_slice() {
+  local boot_info
+  validate_slice_identifier "$BOOT_SLICE"
+  [[ "$BOOT_SLICE" == "${DISK}s1" ]] \
+    || die "EFI update requires the OpenDuet boot partition to be ${DISK}s1."
+  boot_info="$(diskutil info "$BOOT_SLICE")" || die "Boot slice does not exist: $BOOT_SLICE"
+  printf '%s\n' "$boot_info" | grep -Eq \
+    'File System Personality:.*(MS-DOS FAT32|FAT32)|Type \(Bundle\):.*msdos|EFI System Partition' \
+    || die "The OpenDuet boot partition must be FAT32/EFI: $BOOT_SLICE"
+}
+
 assert_safe_target_disk() {
   local disk="$1" info internal
   info="$(diskutil info "$disk")" || die "diskutil info failed for $disk"
@@ -1062,6 +1108,36 @@ confirm_preserve_replace() {
   printf 'Type exactly: %s\n> ' "$expected"
   IFS= read -r answer
   [[ "$answer" == "$expected" ]] || die "Confirmation mismatch; nothing was erased."
+}
+
+confirm_efi_update() {
+  local answer expected
+  expected="UPDATE $BOOT_SLICE ON $DISK"
+  printf '\nThe partition map and installer partition will not be changed.\n'
+  printf 'EFI/OpenDuet files on %s will be backed up and replaced.\n' "$BOOT_SLICE"
+  printf 'Type exactly: %s\n> ' "$expected"
+  IFS= read -r answer
+  [[ "$answer" == "$expected" ]] || die "Confirmation mismatch; nothing was changed."
+}
+
+mount_boot_slice_writable() {
+  local slice="$1" info mount_point read_only
+  info="$(diskutil info "$slice")" || die "Cannot inspect boot slice: $slice"
+  mount_point="$(printf '%s\n' "$info" | awk -F': *' '/Mount Point/ {print $2; exit}')"
+  read_only="$(printf '%s\n' "$info" | awk -F': *' '/Volume Read-Only/ {print $2; exit}')"
+  if [[ -n "$mount_point" && "$mount_point" != "Not mounted" && "$read_only" == "Yes" ]]; then
+    sudo diskutil unmount "$slice" >/dev/null
+    mount_point=""
+  fi
+  if [[ -z "$mount_point" || "$mount_point" == "Not mounted" ]]; then
+    sudo diskutil mount "$slice" >/dev/null
+  fi
+  info="$(diskutil info "$slice")" || die "Cannot rediscover mounted boot slice: $slice"
+  mount_point="$(printf '%s\n' "$info" | awk -F': *' '/Mount Point/ {print $2; exit}')"
+  read_only="$(printf '%s\n' "$info" | awk -F': *' '/Volume Read-Only/ {print $2; exit}')"
+  [[ -d "$mount_point" && "$read_only" != "Yes" ]] \
+    || die "Boot slice is not mounted read-write: $slice"
+  printf '%s\n' "$mount_point"
 }
 
 replace_boot_files() {
@@ -1206,6 +1282,42 @@ EOF
   log "USB prepared. Installer UUID: $volume_uuid. Run --verify-usb --disk $DISK before moving it to the Acer."
 }
 
+run_update_efi() {
+  local build_root deploy_variant efi_mount disk_number boot_tool
+  require_macos_build_host
+  validate_disk_identifier "$DISK"
+  [[ -n "$BOOT_SLICE" ]] || die "--update-efi requires --boot-slice /dev/diskXs1"
+  [[ -z "$INSTALLER_SLICE" ]] || die "--update-efi does not accept --installer-slice"
+  [[ "$BOOTLOADER" == auto || "$BOOTLOADER" == opencore ]] \
+    || die "--update-efi currently supports only OpenCore/OpenDuet"
+  run_build
+  deploy_variant="vanilla"
+  [[ "$KERNEL_MODE" == "custom" ]] && deploy_variant="custom"
+  build_root="$OUTPUT_DIR/$OS_PROFILE/opencore-$deploy_variant"
+  [[ -f "$build_root/ESP/EFI/OC/config.plist" ]] \
+    || die "Expected deployment build is missing: $build_root"
+  assert_safe_target_disk "$DISK"
+  assert_boot_slice
+  if (( DRY_RUN == 1 )); then
+    cat <<EOF
+DRY RUN — no disk writes were performed.
+Would preserve the partition map and every non-EFI partition, then:
+  back up and replace EFI/OpenDuet files on $BOOT_SLICE
+  update OpenDuet MBR/PBR using OpenCore $OC_VERSION BootInstall_${OC_ARCH_NAME}.tool
+EOF
+    return 0
+  fi
+  confirm_efi_update
+  efi_mount="$(mount_boot_slice_writable "$BOOT_SLICE")"
+  replace_boot_files "$efi_mount" "$build_root"
+  disk_number="${DISK#/dev/disk}"
+  boot_tool="$OC_CACHE_ROOT/Utilities/LegacyBoot/BootInstall_${OC_ARCH_NAME}.tool"
+  chmod +x "$boot_tool" "$OC_CACHE_ROOT/Utilities/LegacyBoot/BootInstallBase.sh"
+  printf '%s\n' "$disk_number" | "$boot_tool"
+  sync
+  log "EFI/OpenDuet updated; installer partition was not modified. Run --verify-usb --disk $DISK."
+}
+
 run_verify_usb() {
   local info slice mount_point found=0
   require_macos_build_host
@@ -1246,6 +1358,7 @@ while (($#)); do
     --build) set_mode build ;;
     --list-disks) set_mode list-disks ;;
     --make-usb) set_mode make-usb ;;
+    --update-efi) set_mode update-efi ;;
     --verify-usb) set_mode verify-usb ;;
     --os) need_value "$@"; shift; OS_PROFILE="$1" ;;
     --bootloader) need_value "$@"; shift; BOOTLOADER="$1" ;;
@@ -1256,6 +1369,8 @@ while (($#)); do
     --kext-set) need_value "$@"; shift; KEXT_SET="$1" ;;
     --sata) need_value "$@"; shift; SATA_MODE="$1" ;;
     --acpi) need_value "$@"; shift; ACPI_MODE="$1" ;;
+    --apic) need_value "$@"; shift; APIC_MODE="$1" ;;
+    --runtime) need_value "$@"; shift; RUNTIME_PROFILE="$1" ;;
     --disk) need_value "$@"; shift; DISK="$1" ;;
     --retail) need_value "$@"; shift; RETAIL="$1" ;;
     --volume) need_value "$@"; shift; AUDIT_VOLUME="$1" ;;
@@ -1275,9 +1390,11 @@ done
 case "$OS_PROFILE" in leopard|snowleopard) ;; *) die "--os must be leopard or snowleopard" ;; esac
 case "$KERNEL_MODE" in auto|vanilla|custom) ;; *) die "--kernel must be auto, vanilla, or custom" ;; esac
 case "$BOOT_PRESET" in normal|verbose|safe|diagnostic) ;; *) die "Invalid --boot-preset" ;; esac
-case "$KEXT_SET" in minimal|full) ;; *) die "--kext-set must be minimal or full" ;; esac
+case "$KEXT_SET" in smc|minimal|full) ;; *) die "--kext-set must be smc, minimal, or full" ;; esac
 case "$SATA_MODE" in native|injected) ;; *) die "--sata must be native or injected" ;; esac
 case "$ACPI_MODE" in native|patched) ;; *) die "--acpi must be native or patched" ;; esac
+case "$APIC_MODE" in native|drop-duplicate) ;; *) die "--apic must be native or drop-duplicate" ;; esac
+case "$RUNTIME_PROFILE" in auto|off|legacy|modern) ;; *) die "--runtime must be auto, off, legacy, or modern" ;; esac
 case "$USB_LAYOUT" in fresh|preserve) ;; *) die "--layout must be fresh or preserve" ;; esac
 
 case "$MODE" in
@@ -1287,6 +1404,7 @@ case "$MODE" in
   build) run_build ;;
   list-disks) run_list_disks ;;
   make-usb) [[ -n "$DISK" ]] || die "--make-usb requires --disk /dev/diskX"; run_make_usb ;;
+  update-efi) [[ -n "$DISK" ]] || die "--update-efi requires --disk /dev/diskX"; run_update_efi ;;
   verify-usb) [[ -n "$DISK" || -n "$AUDIT_VOLUME" ]] || die "Pass --disk or --volume"; run_verify_usb ;;
   "") usage; exit 1 ;;
 esac

@@ -71,9 +71,13 @@ def main() -> int:
     parser.add_argument("--os", required=True, choices=tuple(KERNEL_RANGES))
     parser.add_argument("--kernel", required=True, choices=("vanilla", "custom"))
     parser.add_argument("--boot-preset", required=True, choices=tuple(BOOT_ARGS))
+    parser.add_argument(
+        "--runtime-profile", required=True, choices=("off", "legacy", "modern")
+    )
     parser.add_argument("--driver", action="append", default=[])
     parser.add_argument("--kext", action="append", default=[])
     parser.add_argument("--acpi", action="append", default=[])
+    parser.add_argument("--drop-duplicate-apic", action="store_true")
     parser.add_argument("--oc-version", default="UNKNOWN")
     args = parser.parse_args()
 
@@ -84,10 +88,17 @@ def main() -> int:
     booter = config["Booter"]["Quirks"]
     booter["FixupAppleEfiImages"] = True
     booter["SetupVirtualMap"] = False
-    if args.os == "leopard":
+    if args.runtime_profile == "off":
+        booter["EnableSafeModeSlide"] = False
+        booter["EnableWriteUnprotector"] = False
+        booter["ProvideCustomSlide"] = False
+        booter["RebuildAppleMemoryMap"] = False
+        booter["SyncRuntimePermissions"] = False
+    elif args.runtime_profile == "legacy":
         # Darwin 9 i386 cannot consume the MAT-split OpenRuntime descriptors emitted by
         # RebuildAppleMemoryMap on OpenDuet: boot.efi leaves their VirtualStart at zero and
         # XNU panics in pmap_map. Keep OpenRuntime, but use its legacy write-unprotect path.
+        booter["EnableSafeModeSlide"] = False
         booter["EnableWriteUnprotector"] = True
         booter["RebuildAppleMemoryMap"] = False
         booter["SyncRuntimePermissions"] = False
@@ -100,6 +111,17 @@ def main() -> int:
         {"Comment": "User-supplied ACPI table", "Enabled": True, "Path": path}
         for path in args.acpi
     ]
+    if args.drop_duplicate_apic:
+        config["ACPI"]["Delete"] = [
+            {
+                "All": False,
+                "Comment": "Drop duplicate Phoenix MADT; keep INTEL CALISTGA APIC",
+                "Enabled": True,
+                "OemTableId": b"\x09 APIC  ",
+                "TableLength": 90,
+                "TableSignature": b"APIC",
+            }
+        ]
 
     minimum, maximum = KERNEL_RANGES[args.os]
     config["Kernel"]["Add"] = [
@@ -199,7 +221,8 @@ def main() -> int:
     config["UEFI"]["Output"]["ProvideConsoleGop"] = True
     config["UEFI"]["Output"]["Resolution"] = "Max"
     config["UEFI"]["Quirks"]["ReleaseUsbOwnership"] = True
-    config["UEFI"]["Quirks"]["RequestBootVarRouting"] = True
+    # OpenDuet already provides variable routing; OpenRuntime is not required for it here.
+    config["UEFI"]["Quirks"]["RequestBootVarRouting"] = False
 
     config["#Revision"] = f"Aspire 4310 profile generated from OpenCore {args.oc_version} Sample.plist"
     args.output.parent.mkdir(parents=True, exist_ok=True)

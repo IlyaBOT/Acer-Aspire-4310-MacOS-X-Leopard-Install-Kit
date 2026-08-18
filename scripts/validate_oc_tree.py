@@ -98,13 +98,19 @@ def main() -> int:
     if kernel_arch.startswith("i386") and booter_quirks["SetupVirtualMap"]:
         fail(errors, "SetupVirtualMap is incompatible with 32-bit kernels")
 
+    has_open_runtime = "OpenRuntime.efi" in seen_drivers
+    if config["UEFI"]["Quirks"]["RequestBootVarRouting"]:
+        fail(errors, "OpenDuet must not enable RequestBootVarRouting")
+
     if config["Kernel"]["Emulate"]["MinKernel"].startswith("9."):
-        if not booter_quirks["EnableWriteUnprotector"]:
-            fail(errors, "Leopard requires the legacy OpenRuntime write-unprotect path")
         if booter_quirks["RebuildAppleMemoryMap"]:
             fail(errors, "Leopard cannot use the MAT-split runtime memory map")
         if booter_quirks["SyncRuntimePermissions"]:
             fail(errors, "Leopard cannot use MAT runtime permission syncing")
+        if has_open_runtime and not booter_quirks["EnableWriteUnprotector"]:
+            fail(errors, "Leopard OpenRuntime requires the legacy write-unprotect path")
+        if not has_open_runtime and booter_quirks["EnableWriteUnprotector"]:
+            fail(errors, "Runtime-free Leopard must not enable the OpenRuntime write-unprotect path")
 
     if errors:
         for error in errors:

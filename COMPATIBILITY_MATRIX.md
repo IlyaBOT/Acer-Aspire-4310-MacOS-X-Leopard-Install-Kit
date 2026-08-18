@@ -5,7 +5,7 @@ EFI уже дошёл до Leopard XNU на физическом Acer, но яд
 
 | Component | Leopard 10.5 i386 | Snow Leopard 10.6 i386 | Static evidence | Runtime |
 |---|---|---|---|---|
-| OpenCore 1.0.7 / OpenDuet IA32 | REQUIRED | CANDIDATE | upstream разрешает 10.4–10.5 i386 только с 32-bit firmware; PE32 i386 build validated; Leopard profile bypasses MAT splitting | REACHED XNU; LEGACY RUNTIME PROFILE PENDING |
+| OpenCore 1.0.7 / OpenDuet IA32 | REQUIRED | CANDIDATE | upstream разрешает 10.4–10.5 i386 только с 32-bit firmware; PE32 i386 build validated; Leopard auto omits OpenRuntime after both MAT and legacy profiles failed physically | REACHED XNU; RUNTIME-FREE PROFILE PENDING |
 | OpenCore 1.0.7 / OpenDuet X64 | INCOMPATIBLE | CANDIDATE_NOT_DEFAULT | 10.5 i386 недоступен на 64-bit firmware по upstream compatibility rules | PHYSICAL PANIC in `pmap_enter` |
 | FakeSMC (`org.netkas.fakesmc`, v1) | LIKELY_COMPATIBLE | LIKELY_COMPATIBLE | universal i386+x86_64; Darwin 7/8 KPI floors | NOT TESTED |
 | AppleACPIPS2Nub 1.0.0d1 | LIKELY_COMPATIBLE | LIKELY_COMPATIBLE | universal i386+x86_64; Darwin 8 KPI floors | NOT TESTED |

@@ -33,3 +33,6 @@ backup/
 
 # OpenCore DEBUG logs may contain disk GUIDs and SMBIOS identifiers.
 opencore-*.txt
+
+# Local hardware reports can contain machine-specific firmware and device data.
+*SysReport*.zip

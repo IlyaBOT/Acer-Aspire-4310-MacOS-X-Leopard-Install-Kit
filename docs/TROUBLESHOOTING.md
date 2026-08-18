@@ -35,6 +35,22 @@ partition действительно HFS+, и installer содержит `System
 `EnableWriteUnprotector=true`, `RebuildAppleMemoryMap=false`,
 `SyncRuntimePermissions=false`. Не включать `SetupVirtualMap`: он несовместим с i386.
 
+Если panic исчез, но Darwin 9.4 останавливается после `mig_table_max_displ = 79`, эта строка
+не является сообщением об ошибке: следующая ранняя инициализация почти не печатает лог.
+Сначала исключить EFI runtime, не меняя ACPI и kexts:
+
+```bash
+./prepare_aspire4310_macos.sh --update-efi --os leopard --bootloader opencore \
+  --runtime off --apic native --kext-set minimal \
+  --disk /dev/diskX --boot-slice /dev/diskXs1
+```
+
+Если точка остановки не изменилась, вернуть `--runtime legacy` и удалить только известную
+дублирующую Phoenix MADT через `--apic drop-duplicate`. Третий отдельный тест —
+`--runtime off --apic drop-duplicate --kext-set smc`: он оставляет FakeSMC, но исключает
+AppleACPIPS2Nub/VoodooPS2 из kmod/mkext. Не объединять результаты разных вариантов без
+промежуточного фото и OpenCore DEBUG log.
+
 ## Still waiting for root device
 
 Собрать точный SATA PCI ID и режим BIOS. Сначала native AHCI. Только затем отдельный build:

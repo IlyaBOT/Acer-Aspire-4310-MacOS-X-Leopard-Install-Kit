@@ -109,6 +109,15 @@ cp DSDT.aml input/acpi/
 ./prepare_aspire4310_macos.sh --build --os leopard --acpi patched
 ```
 
+Для повторных boot-тестов готовый installer-раздел восстанавливать заново не нужно. Эта
+операция пересобирает профиль, сохраняет старые boot-файлы в `backup/` и заменяет только
+EFI/OpenDuet на первом разделе:
+
+```bash
+./prepare_aspire4310_macos.sh --update-efi --os leopard --bootloader opencore \
+  --disk /dev/diskX --boot-slice /dev/diskXs1
+```
+
 ## OpenCore choices
 
 Версия не зашита навсегда: `--download` получает latest stable release через официальный GitHub API, сохраняет URL/SHA-256/timestamp в `downloads/manifest.tsv`, а config генерируется из `Docs/Sample.plist` именно этого release и проверяется его же `ocvalidate`.
@@ -119,11 +128,23 @@ OpenCore 1.0.7 поддерживает загрузку Mac OS X 10.4–10.5 с
 отклоняется до сборки: на физическом Aspire такой смешанный вариант доходил до XNU, но
 падал в `pmap_enter: pv not in hash list` при обработке EFI runtime map.
 
-Физический IA32 DEBUG log локализовал оставшуюся панику в MAT-разбитом descriptor
-`OpenRuntime.efi` с нулевым `VirtualStart`. Поэтому Leopard автоматически получает legacy
-runtime profile: `EnableWriteUnprotector=true`, `RebuildAppleMemoryMap=false`,
-`SyncRuntimePermissions=false`, `SetupVirtualMap=false`. Это следующий диагностический
-профиль; успешная загрузка XNU ещё должна быть подтверждена на ноутбуке.
+Физический IA32 DEBUG log сначала локализовал панику в MAT-разбитом descriptor
+`OpenRuntime.efi` с нулевым `VirtualStart`. Legacy write-unprotect убрал панику, но XNU 9.4
+затем воспроизводимо остановился сразу после `mig_table_max_displ = 79`. Поэтому Leopard
+`--runtime auto` теперь выбирает runtime-free профиль: `OpenRuntime.efi` не загружается,
+`RequestBootVarRouting=false`, а runtime memory quirks выключены. Старый профиль сохранён
+для контрольного теста как `--runtime legacy`; Snow Leopard auto использует `modern`.
+
+SysReport физического Aspire также содержит две MADT: основную `INTEL/CALISTGA` и вторую
+Phoenix `PTLTD/\t APIC`. Точечный тест удаляет только вторую таблицу:
+
+```bash
+./prepare_aspire4310_macos.sh --build --os leopard --runtime off \
+  --apic drop-duplicate --kext-set smc
+```
+
+`--kext-set smc` оставляет только FakeSMC и исключает PS/2 kext metadata из ранней
+инициализации ядра; UEFI PS/2-драйверы picker при этом сохраняются.
 
 Эквивалентная явная команда:
 

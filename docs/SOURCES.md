@@ -1,6 +1,6 @@
 # Источники и provenance
 
-Проверено 2026-08-18:
+Проверено 2026-08-19:
 
 - OpenCorePkg releases: https://github.com/acidanthera/OpenCorePkg/releases
 - OpenCore 1.0.7 Configuration source: https://github.com/acidanthera/OpenCorePkg/blob/1.0.7/Docs/Configuration.tex
@@ -15,6 +15,8 @@
 - Apple Snow Leopard 10.6.8 Combo Update v1.1: https://support.apple.com/en-us/106449
 - Legacy kext candidate archive (commit-pinned at download): https://github.com/khronokernel/Legacy-Kexts
 - VirtualSMC releases (static comparison only): https://github.com/acidanthera/VirtualSMC/releases
+- XNU 1228.5.20 early kernel startup: https://github.com/apple-oss-distributions/xnu/blob/xnu-1228.5.20/osfmk/kern/startup.c
+- XNU 1228.5.20 IPC initialization: https://github.com/apple-oss-distributions/xnu/blob/xnu-1228.5.20/osfmk/ipc/ipc_init.c
 
 Исторические forum links из ТЗ используются только как hardware-specific leads, не как
 автоматические binary sources:
@@ -22,6 +24,7 @@
 - https://acerfans.ru/forum/topic_3272
 - https://acerfans.ru/forum/topic_55/4
 - https://www.insanelymac.com/forum/topic/265833-miniguide-iatkos-s3-v2-installation-on-the-acer-aspire-4310-mac-osx-1063/
+- https://bbs.archlinux.org/viewtopic.php?id=99176 (аналогичный Calistoga/Phoenix BIOS с двумя MADT)
 
 Каждая фактическая загрузка получает URL, version/commit, SHA-256, timestamp и VERIFIED status
 в `downloads/manifest.tsv`.
