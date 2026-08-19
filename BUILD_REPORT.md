@@ -1,6 +1,6 @@
 # Aspire 4310 build report
 
-Generated: 2026-08-19T09:40:01Z
+Generated: 2026-08-19T09:54:44Z
 
 ## Host
 
@@ -27,7 +27,7 @@ Generated: 2026-08-19T09:40:01Z
 - Kernel profile: vanilla
 - KernelArch: i386-user32
 - KernelCache: Auto
-- Boot args: -v keepsyms=1 debug=0x100 cpus=1
+- Boot args: -v keepsyms=1 debug=0x108 cpus=1
 - CustomKernel: false
 - Runtime memory profile: legacy
 - Boot preset: diagnostic

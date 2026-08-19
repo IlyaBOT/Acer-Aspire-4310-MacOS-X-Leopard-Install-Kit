@@ -64,6 +64,13 @@ handler. Поэтому `--runtime auto` для Leopard остаётся `legacy
 доступен только явно. `RequestBootVarRouting=false` во всех OpenDuet-профилях. Snow Leopard
 auto сохраняет MAT-профиль `modern`.
 
+Darwin 9.4 печатает `mig_table_max_displ = 79` из `mig_init()` ещё внутри
+`ipc_bootstrap()`. Это не ошибка и не точная граница зависания: до следующего обычного
+экранного сообщения остаются IPC, VM, kmod и machine initialization. Поэтому
+`--boot-preset diagnostic` добавляет `DB_KPRT` и использует `debug=0x108`, сохраняя
+одновременно экранный panic-флаг `DB_LOG_PI_SCRN`. Linux-дамп не обнаружил COM1 по
+`0x3F8`, так что ранний XNU `kprintf` должен перейти на видеоконсоль.
+
 Firmware SysReport содержит две валидные MADT с одним IOAPIC: `INTEL/CALISTGA` длиной 104
 байта и Phoenix `PTLTD/\t APIC` длиной 90 байт, причём у IRQ0 различаются flags.
 Linux 5.10 на том же ноутбуке сообщает `BIOS bug: multiple APIC/MADT found, using 0` и

@@ -18,7 +18,9 @@ BOOT_ARGS = {
     "normal": "",
     "verbose": "-v keepsyms=1",
     "safe": "-v -x keepsyms=1 debug=0x100",
-    "diagnostic": "-v keepsyms=1 debug=0x100",
+    # DB_LOG_PI_SCRN (0x100) keeps panic output visible; DB_KPRT (0x8)
+    # exposes the otherwise hidden early XNU kprintf path on the console.
+    "diagnostic": "-v keepsyms=1 debug=0x108",
 }
 
 LEOPARD_BOOT_ARGS = "cpus=1"
