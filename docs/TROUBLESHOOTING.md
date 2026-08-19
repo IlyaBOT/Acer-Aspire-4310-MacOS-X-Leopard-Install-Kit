@@ -40,6 +40,11 @@ i386-ядром для Leopard не поддерживается.
 следующая ранняя инициализация почти не печатает обычный лог. Профиль `diagnostic` использует
 `debug=0x108`: `DB_LOG_PI_SCRN` сохраняет panic на экране, а `DB_KPRT` выводит скрытый
 ранний `kprintf`. По Linux-дампу у Aspire нет COM1, поэтому XNU использует видеоконсоль.
+Физический тест с этим флагом дошёл до `Kernel boot args:` из `PE_init_iokit()`: память,
+IPC, scheduler, clock и machine initialization уже пройдены, а остановка находится при
+входе в IOKit. Поэтому diagnostic также передаёт `io=0x20007f`: это включает трассировку
+attach/probe/start/register/match/config/yield и синхронный `IOLog`, чтобы на экране остался
+последний завершённый шаг `StartIOKit`.
 Контрольный runtime-free тест уже выполнен: OpenCore дошёл до XNU без ошибки, после чего
 машина перезагрузилась до panic handler. Не использовать `--runtime off` как рабочий
 профиль. Следующий тест сохраняет legacy runtime и удаляет только вторую Phoenix MADT:

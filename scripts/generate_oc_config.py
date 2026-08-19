@@ -20,7 +20,9 @@ BOOT_ARGS = {
     "safe": "-v -x keepsyms=1 debug=0x100",
     # DB_LOG_PI_SCRN (0x100) keeps panic output visible; DB_KPRT (0x8)
     # exposes the otherwise hidden early XNU kprintf path on the console.
-    "diagnostic": "-v keepsyms=1 debug=0x108",
+    # io=0x20007f traces the early IOKit attach/probe/start/register/match/config
+    # path and makes IOLog synchronous so the last completed step reaches video.
+    "diagnostic": "-v keepsyms=1 debug=0x108 io=0x20007f",
 }
 
 LEOPARD_BOOT_ARGS = "cpus=1"

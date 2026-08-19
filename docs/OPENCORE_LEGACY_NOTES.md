@@ -69,7 +69,10 @@ Darwin 9.4 печатает `mig_table_max_displ = 79` из `mig_init()` ещё 
 экранного сообщения остаются IPC, VM, kmod и machine initialization. Поэтому
 `--boot-preset diagnostic` добавляет `DB_KPRT` и использует `debug=0x108`, сохраняя
 одновременно экранный panic-флаг `DB_LOG_PI_SCRN`. Linux-дамп не обнаружил COM1 по
-`0x3F8`, так что ранний XNU `kprintf` должен перейти на видеоконсоль.
+`0x3F8`, так что ранний XNU `kprintf` должен перейти на видеоконсоль. Физический тест
+подтвердил прохождение до `PE_init_iokit()` и строки `Kernel boot args:`. Следующая фаза —
+`StartIOKit`, поэтому preset также добавляет `io=0x20007f`: ранние операции IOKit
+attach/probe/start/register/match/config/yield выводятся синхронно.
 
 Firmware SysReport содержит две валидные MADT с одним IOAPIC: `INTEL/CALISTGA` длиной 104
 байта и Phoenix `PTLTD/\t APIC` длиной 90 байт, причём у IRQ0 различаются flags.
