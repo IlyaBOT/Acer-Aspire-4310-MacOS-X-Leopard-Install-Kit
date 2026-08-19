@@ -9,7 +9,7 @@ Intel `Celeron M Processor 500 Series Datasheet`, document 316205-003 (September
 - семейство поддерживается ICH7M-era платформой.
 
 Наличие Intel 64 не делает X64 OpenDuet пригодным для Leopard. Для Mac OS X 10.5 OpenCore
-использует целиком IA32 firmware path, `KernelArch=i386` и `KernelCache=Auto` (для 10.5
+использует целиком IA32 firmware path, `KernelArch=i386-user32` и `KernelCache=Auto` (для 10.5
 автоматически выбирается поддерживаемый Mkext вместо V1 prelinked injection).
 
 Intel PCN 107423-00 документирует перевод Celeron M 520 с Merom B2 на Merom-L A stepping и
@@ -33,6 +33,6 @@ TARGET_CPU_SUPPORTS_SSE3=YES
 TARGET_CPU_SUPPORTS_SSSE3=YES
 TARGET_CPU_CPUID=0x000006F6
 OpenDuet default=IA32
-Leopard KernelArch=i386
-Leopard boot-args include arch=i386 -legacy cpus=1
+Leopard KernelArch=i386-user32
+Leopard boot-args include cpus=1; OpenCore supplies -legacy
 ```

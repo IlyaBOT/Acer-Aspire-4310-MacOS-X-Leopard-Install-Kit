@@ -733,14 +733,18 @@ ocvalidate_path() {
 
 write_build_report() {
   local build_root="$1" kernel_variant="$2" validation="$3"
-  local bundle bundle_id version architectures minimum_os digest static_status kernel_file boot_args
-  boot_args="$(python3 - "$build_root/ESP/EFI/OC/config.plist" <<'PY'
+  local bundle bundle_id version architectures minimum_os digest static_status kernel_file boot_args report_kernel_arch config_summary
+  config_summary="$(python3 - "$build_root/ESP/EFI/OC/config.plist" <<'PY'
 import plistlib, sys
 with open(sys.argv[1], "rb") as handle:
     config = plistlib.load(handle)
-print(config["NVRAM"]["Add"]["7C436110-AB2A-4BBB-A880-FE41995C9F82"]["boot-args"])
+print("\t".join((
+    config["Kernel"]["Scheme"]["KernelArch"],
+    config["NVRAM"]["Add"]["7C436110-AB2A-4BBB-A880-FE41995C9F82"]["boot-args"],
+)))
 PY
 )"
+  IFS=$'\t' read -r report_kernel_arch boot_args <<<"$config_summary"
   detect_host
   cat >"$build_root/BUILD_REPORT.md" <<EOF
 # Aspire 4310 build report
@@ -770,7 +774,7 @@ Generated: $(date -u '+%Y-%m-%dT%H:%M:%SZ')
 - OpenDuet: $OC_ARCH_NAME
 - HFS driver: $HFS_SELECTED
 - Kernel profile: $kernel_variant
-- KernelArch: i386
+- KernelArch: $report_kernel_arch
 - KernelCache: Auto
 - Boot args: $boot_args
 - CustomKernel: $([[ "$kernel_variant" == custom ]] && printf true || printf false)

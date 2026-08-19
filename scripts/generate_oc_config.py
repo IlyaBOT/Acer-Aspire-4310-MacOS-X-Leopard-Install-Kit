@@ -21,15 +21,14 @@ BOOT_ARGS = {
     "diagnostic": "-v keepsyms=1 debug=0x100",
 }
 
-LEOPARD_BOOT_ARGS = "arch=i386 -legacy cpus=1"
+LEOPARD_BOOT_ARGS = "cpus=1"
 
 
 def boot_args_for(os_profile: str, preset: str) -> str:
     parts = [BOOT_ARGS[preset]]
     if os_profile == "leopard":
-        # KernelArch selects the i386 Mach-O slice, while -legacy prevents Darwin 9
-        # from entering IA32e internally on this EM64T Celeron M.  The physical CPU
-        # is CPUID 06F6 with one core, so keep the early topology deterministic too.
+        # KernelArch=i386-user32 selects both the i386 kernel and 32-bit userspace;
+        # OpenCore adds -legacy itself.  Keep only the physical one-core topology here.
         parts.append(LEOPARD_BOOT_ARGS)
     return " ".join(part for part in parts if part)
 
@@ -154,7 +153,7 @@ def main() -> int:
     scheme = config["Kernel"]["Scheme"]
     scheme["CustomKernel"] = args.kernel == "custom"
     scheme["FuzzyMatch"] = True
-    scheme["KernelArch"] = "i386"
+    scheme["KernelArch"] = "i386-user32" if args.os == "leopard" else "i386"
     scheme["KernelCache"] = "Auto"
 
     boot = config["Misc"]["Boot"]

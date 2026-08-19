@@ -128,12 +128,13 @@ EFI/OpenDuet на первом разделе:
 Версия не зашита навсегда: `--download` получает latest stable release через официальный GitHub API, сохраняет URL/SHA-256/timestamp в `downloads/manifest.tsv`, а config генерируется из `Docs/Sample.plist` именно этого release и проверяется его же `ocvalidate`.
 
 Наличие Intel 64 у Celeron M 520 не означает, что для Leopard подходит OpenDuet X64.
-OpenCore 1.0.7 поддерживает загрузку Mac OS X 10.4–10.5 с `KernelArch=i386` только через
+OpenCore 1.0.7 поддерживает загрузку Mac OS X 10.4–10.5 с i386-архитектурой только через
 32-битную firmware path, поэтому `--oc-arch auto` выбирает IA32. Явный X64 для Leopard
 отклоняется до сборки: на физическом Aspire такой смешанный вариант доходил до XNU, но
 падал в `pmap_enter: pv not in hash list` при обработке EFI runtime map.
-Leopard config дополнительно фиксирует `arch=i386 -legacy cpus=1`: `KernelArch` выбирает
-i386-срез, а `-legacy` не даёт Darwin 9 снова включить IA32e на EM64T-процессоре.
+Leopard config использует `KernelArch=i386-user32`: OpenCore выбирает i386-ядро с 32-битным
+userspace и сам добавляет `-legacy`. В `boot-args` остаётся только соответствующий реальному
+одноядерному CPU `cpus=1`; ручной `arch=i386` исключён.
 
 Физический IA32 DEBUG log сначала локализовал панику в MAT-разбитом descriptor
 `OpenRuntime.efi` с нулевым `VirtualStart`. Legacy write-unprotect убрал панику, но XNU 9.4

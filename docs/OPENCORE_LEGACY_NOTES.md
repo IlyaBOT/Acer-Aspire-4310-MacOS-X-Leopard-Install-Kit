@@ -12,7 +12,7 @@
 же cache release и валидируется его же `ocvalidate`.
 
 Для Leopard выбирается OpenCore/OpenDuet IA32 независимо от поддержки Intel 64 процессором.
-По документации OpenCore 1.0.7, Mac OS X 10.4–10.5 с `KernelArch=i386` поддерживается только
+По документации OpenCore 1.0.7, Mac OS X 10.4–10.5 с i386-архитектурой поддерживается только
 на 32-битном firmware path. Поэтому явное сочетание `--os leopard --oc-arch x64` считается
 ошибкой конфигурации и отклоняется до сборки.
 
@@ -27,7 +27,7 @@ Booter/Quirks/SyncRuntimePermissions = false
 Kernel/Emulate/DummyPowerManagement = true
 Kernel/Scheme/CustomKernel = false (true only in separate custom build)
 Kernel/Scheme/FuzzyMatch = true
-Kernel/Scheme/KernelArch = i386
+Kernel/Scheme/KernelArch = i386-user32
 Kernel/Scheme/KernelCache = Auto
 Kernel/Quirks/AppleCpuPmCfgLock = false
 Kernel/Quirks/LegacyCommpage = false
@@ -39,17 +39,17 @@ UEFI/Quirks/RequestBootVarRouting = false
 ```
 
 `FixupAppleEfiImages` нужен с современным строгим OpenDuet loader для старых Apple `boot.efi`.
-`SetupVirtualMap=false` обязателен для Leopard/Snow Leopard профилей с `KernelArch=i386`:
+`SetupVirtualMap=false` обязателен для Leopard/Snow Leopard профилей с 32-битным ядром:
 OpenCore документирует этот quirk как несовместимый с 32-битными ядрами. Первый физический
 тест с ошибочным значением `true` дошёл до Darwin 9.4 `RELEASE_I386`, после чего получил
 раннюю панику `pmap_enter: pv not in hash list` во время инициализации памяти.
 Повторный тест с исправленным quirk, но OpenDuet X64 дал ту же панику. Backtrace проходит
 через `machine_init` и `pmap_map`; EFI runtime descriptor передаётся ядру с нулевым
 `VirtualStart` и сталкивается со служебной low-memory mapping XNU. Это подтвердило, что
-Leopard нужен весь IA32 boot path, а не только `KernelArch=i386` внутри X64 OpenCore.
-Физический CPU оказался CPUID `06F6`, один core, с Intel 64. Поэтому Leopard boot args
-явно содержат `arch=i386 -legacy cpus=1`: `-legacy` предотвращает повторное включение
-IA32e внутри Darwin 9, а `cpus=1` соответствует реальной топологии.
+Leopard нужен весь IA32 boot path, а не только i386-ядро внутри X64 OpenCore.
+Физический CPU оказался CPUID `06F6`, один core, с Intel 64. Поэтому Leopard использует
+`KernelArch=i386-user32`: OpenCore выбирает 32-битные ядро и userspace и сам передаёт
+`-legacy`. В явных boot args остаётся только соответствующий реальной топологии `cpus=1`.
 
 Полный DEBUG log с IA32 path показал следующий источник оставшейся паники: OpenRuntime
 успешно загружается, `MAT support is 1`, а активны `RBMAP=1` и `RTPERMS=1`. Падающий

@@ -1,6 +1,6 @@
 # Aspire 4310 build report
 
-Generated: 2026-08-18T23:19:21Z
+Generated: 2026-08-19T09:40:01Z
 
 ## Host
 
@@ -25,9 +25,9 @@ Generated: 2026-08-18T23:19:21Z
 - OpenDuet: IA32
 - HFS driver: HfsPlus32.efi
 - Kernel profile: vanilla
-- KernelArch: i386
+- KernelArch: i386-user32
 - KernelCache: Auto
-- Boot args: -v keepsyms=1 debug=0x100 arch=i386 -legacy cpus=1
+- Boot args: -v keepsyms=1 debug=0x100 cpus=1
 - CustomKernel: false
 - Runtime memory profile: legacy
 - Boot preset: diagnostic

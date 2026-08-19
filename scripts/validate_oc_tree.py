@@ -108,7 +108,12 @@ def main() -> int:
             ["boot-args"]
             .split()
         )
-        for required_arg in ("arch=i386", "-legacy", "cpus=1"):
+        if kernel_arch != "i386-user32":
+            fail(errors, "Leopard must use KernelArch=i386-user32")
+        for forbidden_arg in ("arch=i386", "-legacy"):
+            if forbidden_arg in boot_args:
+                fail(errors, f"Leopard must let KernelArch supply {forbidden_arg}")
+        for required_arg in ("cpus=1",):
             if required_arg not in boot_args:
                 fail(errors, f"Leopard boot-args must contain {required_arg}")
         if booter_quirks["RebuildAppleMemoryMap"]:
