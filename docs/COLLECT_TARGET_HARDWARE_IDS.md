@@ -1,18 +1,21 @@
 # Hardware IDs физического Acer Aspire 4310
 
 Снимок с Linux получен 2026-08-19. Точные значения перенесены в
-`config/hardware-ids.conf`; DMI serial/UUID намеренно не сохраняются в Git. Повторный сбор
-нужен только после замены устройства или платы.
+`config/hardware-ids.conf`, а обезличенный разбор — в
+`docs/ASPIRE4310_HARDWARE_SNAPSHOT.md`. DMI serial/UUID и MAC намеренно не сохраняются в
+Git. Повторный сбор нужен только после замены устройства, панели, CPU или платы.
 
-Загрузите любой современный Linux LiveUSB и сохраните вывод без редактирования:
+Загрузите Linux LiveUSB и из корня проекта выполните:
 
 ```bash
-sudo lspci -nn > lspci-nn.txt
-sudo lspci -nnk > lspci-nnk.txt
-sudo lsusb > lsusb.txt
-sudo dmesg > dmesg.txt
-lscpu > lscpu.txt
+./scripts/collect_linux_hardware.sh
 ```
+
+Скрипт использует `sudo` только для read-only доступа к закрытым kernel/firmware
+интерфейсам. Он сохраняет полный приватный архив в игнорируемом Git каталоге
+`input/hardware/`, отдельно копирует каждую ACPI-таблицу и проверяет заявленную длину и
+checksum. Также сохраняются EDID панели, i8042/Synaptics, HDA codecs, PCI/USB, sleep/wake
+и kernel log.
 
 Нужны строки для:
 
