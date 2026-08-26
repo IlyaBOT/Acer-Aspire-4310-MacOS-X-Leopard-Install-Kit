@@ -1,6 +1,6 @@
 # Источники и provenance
 
-Проверено 2026-08-19:
+Проверено 2026-08-26:
 
 - OpenCorePkg releases: https://github.com/acidanthera/OpenCorePkg/releases
 - OpenCore 1.0.7 Configuration source: https://github.com/acidanthera/OpenCorePkg/blob/1.0.7/Docs/Configuration.tex
@@ -17,6 +17,9 @@
 - VirtualSMC releases (static comparison only): https://github.com/acidanthera/VirtualSMC/releases
 - XNU 1228.5.20 early kernel startup: https://github.com/apple-oss-distributions/xnu/blob/xnu-1228.5.20/osfmk/kern/startup.c
 - XNU 1228.5.20 IPC initialization: https://github.com/apple-oss-distributions/xnu/blob/xnu-1228.5.20/osfmk/ipc/ipc_init.c
+- XNU 1228.5.20 platform-expert IOKit handoff: https://github.com/apple-oss-distributions/xnu/blob/xnu-1228.5.20/pexpert/i386/pe_init.c
+- XNU 1228.5.20 StartIOKit: https://github.com/apple-oss-distributions/xnu/blob/xnu-1228.5.20/iokit/Kernel/IOStartIOKit.cpp
+- Official Mac OS X 10.5.4 source manifest: https://github.com/apple-oss-distributions/distribution-macOS/tree/mac-os-x-1054
 
 Исторические forum links из ТЗ используются только как hardware-specific leads, не как
 автоматические binary sources:

@@ -45,6 +45,12 @@ IPC, scheduler, clock и machine initialization уже пройдены, а ос
 входе в IOKit. Поэтому diagnostic также передаёт `io=0x20007f`: это включает трассировку
 attach/probe/start/register/match/config/yield и синхронный `IOLog`, чтобы на экране остался
 последний завершённый шаг `StartIOKit`.
+Если даже с `io=0x20007f` после `Kernel boot args:` нет ни одной строки IOKit, обычный лог
+ещё не успел заработать. Точка остановки остаётся между `DTLookupEntry()` для
+`/chosen/memory-map`, инициализацией boot UI и самыми ранними `IOLibInit()`/
+`OSlibkernInit()`. Это не доказывает конфликт ACPI или PS/2: platform expert и kext matching
+могли ещё не начаться. Использовать trace-release XNU из [CUSTOM_KERNEL.md](CUSTOM_KERNEL.md),
+который ставит синхронные `kprintf` между этими вызовами.
 Контрольный runtime-free тест уже выполнен: OpenCore дошёл до XNU без ошибки, после чего
 машина перезагрузилась до panic handler. Не использовать `--runtime off` как рабочий
 профиль. Следующий тест сохраняет legacy runtime и удаляет только вторую Phoenix MADT:

@@ -14,6 +14,7 @@ CURRENT_SOURCES="$CACHE_DIR/current-sources.env"
 INSPECTOR="$ROOT_DIR/scripts/inspect_artifact.py"
 CONFIG_GENERATOR="$ROOT_DIR/scripts/generate_oc_config.py"
 TREE_VALIDATOR="$ROOT_DIR/scripts/validate_oc_tree.py"
+XNU_TRACE_BUILDER="$ROOT_DIR/scripts/build_xnu_trace.sh"
 
 # Project-owned constant files.
 # shellcheck disable=SC1091
@@ -87,6 +88,8 @@ Non-destructive project operations:
   ./prepare_aspire4310_macos.sh --download [--skip-combo-updates]
   ./prepare_aspire4310_macos.sh --build --os leopard
   ./prepare_aspire4310_macos.sh --build --os snowleopard
+  ./prepare_aspire4310_macos.sh --prepare-xnu-trace
+  ./prepare_aspire4310_macos.sh --build-xnu-trace
 
 Replace only EFI/OpenDuet on an existing USB (macOS only):
   ./prepare_aspire4310_macos.sh --update-efi --os leopard --disk /dev/diskX \
@@ -1370,6 +1373,8 @@ while (($#)); do
     --audit) set_mode audit ;;
     --download|--download-only) set_mode download ;;
     --build) set_mode build ;;
+    --prepare-xnu-trace) set_mode prepare-xnu-trace ;;
+    --build-xnu-trace) set_mode build-xnu-trace ;;
     --list-disks) set_mode list-disks ;;
     --make-usb) set_mode make-usb ;;
     --update-efi) set_mode update-efi ;;
@@ -1416,6 +1421,8 @@ case "$MODE" in
   audit) run_audit ;;
   download) run_download ;;
   build) run_build ;;
+  prepare-xnu-trace) "$XNU_TRACE_BUILDER" --prepare-only ;;
+  build-xnu-trace) "$XNU_TRACE_BUILDER" ;;
   list-disks) run_list_disks ;;
   make-usb) [[ -n "$DISK" ]] || die "--make-usb requires --disk /dev/diskX"; run_make_usb ;;
   update-efi) [[ -n "$DISK" ]] || die "--update-efi requires --disk /dev/diskX"; run_update_efi ;;

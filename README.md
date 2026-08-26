@@ -182,6 +182,11 @@ input/kernels/snowleopard/{kernel,kernelcache,prelinkedkernel}
 
 `--kernel auto` всегда строит vanilla и дополнительно custom profile, если найден статически подтверждённый i386 artifact. Подробнее: [CUSTOM_KERNEL.md](docs/CUSTOM_KERNEL.md).
 
+Для зависания до первого сообщения IOKit доступен pinned trace-release Apple XNU
+`1228.5.20`: `--prepare-xnu-trace` подготавливает source на любом host, а
+`--build-xnu-trace` собирает RELEASE_I386 в совместимой legacy Xcode-среде и помещает его в
+`input/kernels/leopard/kernel`. Vanilla installer и vanilla EFI при этом не изменяются.
+
 ## Chameleon fallback
 
 Мёртвый исторический URL больше не используется. Для явного fallback положите архив с `i386/boot0`, `boot1h`, `boot` в:

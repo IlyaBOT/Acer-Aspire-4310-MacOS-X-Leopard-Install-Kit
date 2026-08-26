@@ -1,0 +1,211 @@
+diff --git a/iokit/Kernel/IOStartIOKit.cpp b/iokit/Kernel/IOStartIOKit.cpp
+index 25c13cb..345301a 100644
+--- a/iokit/Kernel/IOStartIOKit.cpp
++++ b/iokit/Kernel/IOStartIOKit.cpp
+@@ -100,12 +100,15 @@ void StartIOKit( void * p1, void * p2, void * p3, void * p4 )
+     OSCollectionIterator *      kmodIter;   // must release
+     OSString *                  kmodName;   // don't release
+ 
++    kprintf("[XNU-TRACE IO01] boot-arg parsing enter\n");
+     if( PE_parse_boot_arg( "io", &debugFlags ))
+ 	gIOKitDebug = debugFlags;
++    kprintf("[XNU-TRACE IO02] boot-arg parsing returned, io=0x%llx\n", (unsigned long long) gIOKitDebug);
+ 
+     // Check for the log synchronous bit set in io
+     if (gIOKitDebug & kIOLogSynchronous)
+         debug_mode = true;
++    kprintf("[XNU-TRACE IO03] IOLibInit enter\n");
+ 
+     //
+     // Have to start IOKit environment before we attempt to start
+@@ -115,12 +118,15 @@ void StartIOKit( void * p1, void * p2, void * p3, void * p4 )
+     // initialise as basic OS services.
+     //
+     IOLibInit(); 
++    kprintf("[XNU-TRACE IO04] IOLibInit returned\n");
+     OSlibkernInit();
++    kprintf("[XNU-TRACE IO05] OSlibkernInit returned\n");
+ 
+    /*****
+     * Declare the fake kmod_info structs for built-in components
+     * that must be tracked as independent units for dependencies.
+     */
++    kprintf("[XNU-TRACE IO06] built-in kmod parse enter\n");
+     fakeKmods = OSDynamicCast(OSDictionary,
+         OSUnserialize(gIOKernelKmods, &errorString));
+ 
+@@ -133,11 +139,13 @@ void StartIOKit( void * p1, void * p2, void * p3, void * p4 )
+             panic("Error loading kernel kmod list.\n");
+         }
+     }
++    kprintf("[XNU-TRACE IO07] built-in kmod parse returned\n");
+ 
+     kmodIter = OSCollectionIterator::withCollection(fakeKmods);
+     if (!kmodIter) {
+         panic("Can't declare in-kernel kmods.\n");
+     }
++    kprintf("[XNU-TRACE IO08] built-in kmod declarations enter\n");
+     while ((kmodName = OSDynamicCast(OSString, kmodIter->getNextObject()))) {
+ 
+         OSString * kmodVersion = OSDynamicCast(OSString,
+@@ -158,21 +166,27 @@ void StartIOKit( void * p1, void * p2, void * p3, void * p4 )
+                 kmodName->getCStringNoCopy());
+         }
+     }
++    kprintf("[XNU-TRACE IO09] built-in kmod declarations returned\n");
+ 
+     kmodIter->release();
+     fakeKmods->release();
+ 
+-
+-
++    kprintf("[XNU-TRACE IO10] IORegistryEntry::initialize enter\n");
+     root = IORegistryEntry::initialize();
+     assert( root );
++    kprintf("[XNU-TRACE IO11] IOService::initialize enter\n");
+     IOService::initialize();
++    kprintf("[XNU-TRACE IO12] IOCatalogue::initialize enter\n");
+     IOCatalogue::initialize();
++    kprintf("[XNU-TRACE IO13] IOUserClient::initialize enter\n");
+     IOUserClient::initialize();
++    kprintf("[XNU-TRACE IO14] IOMemoryDescriptor::initialize enter\n");
+     IOMemoryDescriptor::initialize();
++    kprintf("[XNU-TRACE IO15] core IOKit classes ready\n");
+ 
+     // Initializes IOPMinformeeList class-wide shared lock
+     IOPMinformeeList::getSharedRecursiveLock();
++    kprintf("[XNU-TRACE IO16] power-management lock ready\n");
+ 
+     obj = OSString::withCString( version );
+     assert( obj );
+@@ -185,18 +199,25 @@ void StartIOKit( void * p1, void * p2, void * p3, void * p4 )
+         root->setProperty( kIOKitDiagnosticsKey, obj );
+ 	obj->release();
+     }
++    kprintf("[XNU-TRACE IO17] registry root properties ready\n");
+ 
+     rootNub = new IOPlatformExpertDevice;
++    kprintf("[XNU-TRACE IO18] IOPlatformExpertDevice allocated=%p\n", rootNub);
+ 
++    kprintf("[XNU-TRACE IO19] platform expert init enter\n");
+     if( rootNub && rootNub->initWithArgs( p1, p2, p3, p4)) {
++	kprintf("[XNU-TRACE IO20] platform expert init returned\n");
+         rootNub->attach( 0 );
++	kprintf("[XNU-TRACE IO21] platform expert attached\n");
+ 
+        /* Enter into the catalogue the drivers
+         * provided by BootX.
+         */
+         gIOCatalogue->recordStartupExtensions();
++	kprintf("[XNU-TRACE IO22] startup extensions recorded\n");
+ 
+         rootNub->registerService();
++	kprintf("[XNU-TRACE IO23] platform expert registered\n");
+ 
+ #if !NO_KEXTD
+        /* Add a busy count to keep the registry busy until kextd has
+@@ -207,6 +228,10 @@ void StartIOKit( void * p1, void * p2, void * p3, void * p4 )
+         IOService::getServiceRoot()->adjustBusy(1);
+ #endif
+     }
++    else {
++	kprintf("[XNU-TRACE IO90] platform expert initialization failed\n");
++    }
++    kprintf("[XNU-TRACE IO99] StartIOKit exit\n");
+ }
+ 
+ void
+diff --git a/osfmk/kern/startup.c b/osfmk/kern/startup.c
+index 3c132bb..4f34cee 100644
+--- a/osfmk/kern/startup.c
++++ b/osfmk/kern/startup.c
+@@ -274,10 +274,14 @@ kernel_bootstrap_thread(void)
+ #endif
+ 
+ #ifdef	IOKIT
++	kprintf("[XNU-TRACE KB01] PE_init_iokit enter\n");
+ 	PE_init_iokit();
++	kprintf("[XNU-TRACE KB02] PE_init_iokit returned\n");
+ #endif
+ 	
++	kprintf("[XNU-TRACE KB03] enabling interrupts\n");
+ 	(void) spllo();		/* Allow interruptions */
++	kprintf("[XNU-TRACE KB04] interrupts enabled\n");
+ 
+ #ifdef i386
+ 	/*
+@@ -287,14 +291,19 @@ kernel_bootstrap_thread(void)
+ 	 * must be after IOKit has been started because IOKit performs processor
+ 	 * discovery.
+ 	 */
++	kprintf("[XNU-TRACE KB05] cpu_userwindow_init enter\n");
+ 	cpu_userwindow_init(0);
++	kprintf("[XNU-TRACE KB06] cpu_userwindow_init returned\n");
+ #endif
+ 
+ 	/*
+ 	 *	Initialize the shared region module.
+ 	 */
++	kprintf("[XNU-TRACE KB07] vm_shared_region_init enter\n");
+ 	vm_shared_region_init();
++	kprintf("[XNU-TRACE KB08] vm_commpage_init enter\n");
+ 	vm_commpage_init();
++	kprintf("[XNU-TRACE KB09] VM userspace bootstrap ready\n");
+ 
+ #if CONFIG_MACF
+ 	mac_policy_initmach();
+@@ -304,7 +313,9 @@ kernel_bootstrap_thread(void)
+ 	 *	Start the user bootstrap.
+ 	 */
+ #ifdef	MACH_BSD
++	kprintf("[XNU-TRACE KB10] bsd_init enter\n");
+ 	bsd_init();
++	kprintf("[XNU-TRACE KB11] bsd_init returned\n");
+ #endif
+ 
+ #ifdef CONFIG_JETTISON_KERNEL_LINKER
+diff --git a/pexpert/i386/pe_init.c b/pexpert/i386/pe_init.c
+index feb0a88..38c4f20 100644
+--- a/pexpert/i386/pe_init.c
++++ b/pexpert/i386/pe_init.c
+@@ -108,6 +108,7 @@ void PE_init_iokit(void)
+     PE_init_printf(TRUE);
+ 
+     kprintf("Kernel boot args: '%s'\n", PE_boot_args());
++    kprintf("[XNU-TRACE PE01] boot artwork lookup enter\n");
+ 
+     /*
+      * Fetch the CLUT and the noroot image.
+@@ -129,6 +130,7 @@ void PE_init_iokit(void)
+             norootInitialized = TRUE;
+ 	}
+     }
++    kprintf("[XNU-TRACE PE02] boot artwork lookup returned\n");
+ 
+     if (!bootClutInitialized) {
+     bcopy( (void *) (uintptr_t) bootClut, (void *) appleClut8, sizeof(appleClut8) );
+@@ -141,19 +143,24 @@ void PE_init_iokit(void)
+     default_noroot.dy     = kFailedBootOffset;
+     default_noroot_data   = failedBootPict;
+     }
++    kprintf("[XNU-TRACE PE03] boot artwork ready\n");
+     
+     /*
+      * Initialize the panic UI
+      */
+     panic_ui_initialize( (unsigned char *) appleClut8 );
++    kprintf("[XNU-TRACE PE04] panic UI ready\n");
+ 
+     /*
+      * Initialize the spinning wheel (progress indicator).
+      */
+     vc_progress_initialize( &default_progress, default_progress_data,
+                             (unsigned char *) appleClut8 );
++    kprintf("[XNU-TRACE PE05] progress UI ready\n");
+ 
++    kprintf("[XNU-TRACE PE06] StartIOKit enter\n");
+     (void) StartIOKit( PE_state.deviceTreeHead, PE_state.bootArgs, gPEEFIRuntimeServices, NULL);
++    kprintf("[XNU-TRACE PE07] StartIOKit returned\n");
+ }
+ 
+ void PE_init_platform(boolean_t vm_initialized, void * _args)
