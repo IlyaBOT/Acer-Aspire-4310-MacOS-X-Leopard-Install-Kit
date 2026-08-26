@@ -40,6 +40,7 @@ RUNTIME_PROFILE="auto"
 RUNTIME_PROFILE_RESOLVED=""
 DISK=""
 RETAIL=""
+QEMU_GUEST_MEDIA=()
 AUDIT_VOLUME=""
 USB_LAYOUT="fresh"
 BOOT_SLICE=""
@@ -97,7 +98,8 @@ Non-destructive project operations:
   ./prepare_aspire4310_macos.sh --install-xnu-toolchain
   ./prepare_aspire4310_macos.sh --package-xnu-build-bundle
   ./prepare_aspire4310_macos.sh --create-xnu-qemu --retail "/path/to/Leopard.iso"
-  ./prepare_aspire4310_macos.sh --start-xnu-qemu [--retail "/path/to/Leopard.iso"]
+  ./prepare_aspire4310_macos.sh --start-xnu-qemu [--retail "/path/to/Leopard.iso"] \
+    [--guest-media "/path/to/update-or-developer-dvd.dmg"]...
 
 Replace only EFI/OpenDuet on an existing USB (macOS only):
   ./prepare_aspire4310_macos.sh --update-efi --os leopard --disk /dev/diskX \
@@ -1405,6 +1407,7 @@ while (($#)); do
     --runtime) need_value "$@"; shift; RUNTIME_PROFILE="$1" ;;
     --disk) need_value "$@"; shift; DISK="$1" ;;
     --retail) need_value "$@"; shift; RETAIL="$1" ;;
+    --guest-media) need_value "$@"; shift; QEMU_GUEST_MEDIA+=("$1") ;;
     --volume) need_value "$@"; shift; AUDIT_VOLUME="$1" ;;
     --layout) need_value "$@"; shift; USB_LAYOUT="$1" ;;
     --boot-slice) need_value "$@"; shift; BOOT_SLICE="$1" ;;
@@ -1441,14 +1444,21 @@ case "$MODE" in
   package-xnu-build-bundle) "$XNU_BUNDLE_PACKAGER" ;;
   create-xnu-qemu)
     [[ -n "$RETAIL" ]] || die "--create-xnu-qemu requires --retail /path/to/Leopard.iso"
-    "$XNU_QEMU_VM" --create --iso "$RETAIL"
+    qemu_args=(--create --iso "$RETAIL")
+    for guest_media in "${QEMU_GUEST_MEDIA[@]}"; do
+      qemu_args+=(--guest-media "$guest_media")
+    done
+    "$XNU_QEMU_VM" "${qemu_args[@]}"
     ;;
   start-xnu-qemu)
+    qemu_args=(--start)
     if [[ -n "$RETAIL" ]]; then
-      "$XNU_QEMU_VM" --start --iso "$RETAIL"
-    else
-      "$XNU_QEMU_VM" --start
+      qemu_args+=(--iso "$RETAIL")
     fi
+    for guest_media in "${QEMU_GUEST_MEDIA[@]}"; do
+      qemu_args+=(--guest-media "$guest_media")
+    done
+    "$XNU_QEMU_VM" "${qemu_args[@]}"
     ;;
   list-disks) run_list_disks ;;
   make-usb) [[ -n "$DISK" ]] || die "--make-usb requires --disk /dev/diskX"; run_make_usb ;;

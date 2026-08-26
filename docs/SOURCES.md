@@ -21,6 +21,7 @@
 - XNU 1228.5.20 StartIOKit: https://github.com/apple-oss-distributions/xnu/blob/xnu-1228.5.20/iokit/Kernel/IOStartIOKit.cpp
 - Official Mac OS X 10.5.4 source manifest: https://github.com/apple-oss-distributions/distribution-macOS/tree/mac-os-x-1054
 - QEMU system emulation and accelerators: https://www.qemu.org/docs/master/system/introduction.html
+- QEMU read-only DMG image support: https://www.qemu.org/docs/master/system/images.html#read-only-formats
 - QEMU Snow Leopard HVF/TCG comparison: https://gitlab.com/qemu-project/qemu/-/issues/2646
 
 Исторические forum links из ТЗ используются только как hardware-specific leads, не как

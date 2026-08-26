@@ -109,6 +109,23 @@ brew install qemu
 `127.0.0.1:2222` на guest SSH port 22. Для этого в guest надо включить Remote Login.
 QEMU VM и её диск находятся только в ignored `output/xnu-qemu-vm/`.
 
+Combo Update и Developer DVD подключаются как отдельные read-only носители. QEMU читает
+Apple DMG через штатный read-only `dmg` driver, поэтому исходные образы не конвертируются и
+не изменяются. Сначала обновить чистую 10.5.x VM до 10.5.8 и перезагрузить её, затем
+подключить Xcode 3.1.x Developer DVD:
+
+```bash
+./prepare_aspire4310_macos.sh --start-xnu-qemu \
+  --guest-media "/path/to/MacOSXUpdCombo10.5.8.dmg"
+./prepare_aspire4310_macos.sh --start-xnu-qemu \
+  --guest-media "/path/to/xcode-3.1.x-developerdvd.dmg"
+```
+
+`--guest-media` можно указать дважды, если installer ISO не подключён. Профиль i440fx
+ограничен двумя IDE optical devices. При установке Xcode надо оставить включённым пакет
+UNIX Development Support: он устанавливает compiler и command-line tools, необходимые
+legacy XNU build.
+
 Не рассчитывать на современный GitHub TLS внутри Leopard. Host-команда
 `--package-xnu-build-bundle` заранее подготавливает patched XNU и pinned tool sources, затем
 создаёт `output/xnu-trace/aspire4310-xnu-build-vm.tar.gz`. Передать bundle в guest можно

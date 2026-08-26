@@ -9,6 +9,7 @@ VM_DISK="$VM_DIR/leopard-build.qcow2"
 VM_ESP="$VM_DIR/ESP"
 ACTION=""
 INSTALLER=""
+GUEST_MEDIA=()
 ACCELERATOR="${XNU_QEMU_ACCEL:-tcg}"
 MEMORY_MB="${XNU_QEMU_MEMORY_MB:-2048}"
 DISK_GB="${XNU_QEMU_DISK_GB:-24}"
@@ -20,7 +21,12 @@ Create or run the isolated Leopard XNU build VM with QEMU.
 
 Usage:
   scripts/xnu_qemu_vm.sh --create --iso "/path/to/Leopard.iso"
-  scripts/xnu_qemu_vm.sh --start [--iso "/path/to/Leopard.iso"] [--accel tcg|hvf]
+  scripts/xnu_qemu_vm.sh --start [--iso "/path/to/Leopard.iso"] \
+    [--guest-media "/path/to/update-or-developer-dvd.dmg"]... [--accel tcg|hvf]
+
+Guest media is attached read-only. Apple DMG images use QEMU's read-only dmg
+driver; ISO and CDR images use the raw driver. At most two optical images can
+be attached, including the optional Leopard installer.
 
 The default accelerator is TCG. Upstream QEMU has a reproducible report of 10.6.8
 rebooting under HVF while the same guest boots under TCG. Try HVF only as an A/B test.
@@ -43,6 +49,11 @@ while (($#)); do
       (($# > 1)) || die "--iso requires a path"
       shift
       INSTALLER="$1"
+      ;;
+    --guest-media)
+      (($# > 1)) || die "--guest-media requires a path"
+      shift
+      GUEST_MEDIA+=("$1")
       ;;
     --accel)
       (($# > 1)) || die "--accel requires tcg or hvf"
@@ -88,9 +99,31 @@ FIRMWARE="$(find_ia32_firmware)" \
 
 if [[ -n "$INSTALLER" ]]; then
   [[ "$INSTALLER" != *$'\n'* ]] || die "Installer path must not contain a newline"
+  [[ "$INSTALLER" != *,* ]] || die "Installer path must not contain a comma"
   [[ -f "$INSTALLER" ]] || die "Installer image not found: $INSTALLER"
   INSTALLER="$(cd -- "$(dirname -- "$INSTALLER")" && pwd -P)/$(basename -- "$INSTALLER")"
 fi
+
+normalize_guest_media() {
+  local index path
+  for ((index = 0; index < ${#GUEST_MEDIA[@]}; index++)); do
+    path="${GUEST_MEDIA[$index]}"
+    [[ "$path" != *$'\n'* ]] || die "Guest-media path must not contain a newline"
+    [[ "$path" != *,* ]] || die "Guest-media path must not contain a comma"
+    [[ -f "$path" ]] || die "Guest media not found: $path"
+    GUEST_MEDIA[index]="$(cd -- "$(dirname -- "$path")" && pwd -P)/$(basename -- "$path")"
+  done
+}
+
+guest_media_format() {
+  case "$1" in
+    *.dmg|*.DMG) printf '%s\n' dmg ;;
+    *.iso|*.ISO|*.cdr|*.CDR) printf '%s\n' raw ;;
+    *) die "Unsupported guest-media extension (use DMG, ISO, or CDR): $1" ;;
+  esac
+}
+
+normalize_guest_media
 
 select_machine() {
   if "$QEMU_SYSTEM" -machine help 2>/dev/null | grep -q 'pc-i440fx-2\.11'; then
@@ -134,7 +167,8 @@ start_vm() {
   [[ -s "$VM_DISK" ]] || die "VM disk does not exist; run --create first"
   [[ -f "$VM_ESP/EFI/BOOT/BOOTIA32.efi" ]] || die "VM OpenCore ESP is incomplete"
 
-  local machine
+  local machine media media_format
+  local cd_index=2
   local -a args
   machine="$(select_machine)"
   args=(
@@ -157,8 +191,17 @@ start_vm() {
   )
   if [[ -n "$INSTALLER" ]]; then
     [[ -f "$INSTALLER" ]] || die "Installer image not found: $INSTALLER"
-    args+=( -drive "file=$INSTALLER,format=raw,if=ide,index=2,media=cdrom,readonly=on" )
+    args+=( -drive "file=$INSTALLER,format=raw,if=ide,index=$cd_index,media=cdrom,readonly=on" )
+    cd_index=$((cd_index + 1))
   fi
+  for media in "${GUEST_MEDIA[@]}"; do
+    (( cd_index <= 3 )) || die "The i440fx IDE profile supports at most two optical images"
+    media_format="$(guest_media_format "$media")"
+    "$QEMU_IMG" info -f "$media_format" "$media" >/dev/null \
+      || die "QEMU cannot read guest media as $media_format: $media"
+    args+=( -drive "file=$media,format=$media_format,if=ide,index=$cd_index,media=cdrom,readonly=on" )
+    cd_index=$((cd_index + 1))
+  done
   log "Starting QEMU with $machine/$ACCELERATOR; host SSH forward is 127.0.0.1:$SSH_PORT"
   "$QEMU_SYSTEM" "${args[@]}"
 }

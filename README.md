@@ -190,7 +190,8 @@ input/kernels/snowleopard/{kernel,kernelcache,prelinkedkernel}
 Для изолированной сборки на Intel Mac доступны QEMU build-VM и офлайн bundle:
 `--package-xnu-build-bundle`, `--create-xnu-qemu` и `--start-xnu-qemu`. Гостевая macOS и
 Xcode в проект не скачиваются и не распространяются; используются предоставленные
-пользователем установочные носители.
+пользователем установочные носители. Повторяемый `--guest-media` подключает DMG/ISO/CDR
+только для чтения, например сначала Combo Update 10.5.8, затем Xcode Developer DVD.
 
 ## Chameleon fallback
 
