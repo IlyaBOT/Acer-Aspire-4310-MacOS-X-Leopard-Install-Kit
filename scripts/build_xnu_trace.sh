@@ -52,14 +52,25 @@ done
 
 [[ "$JOBS" =~ ^[1-9][0-9]*$ ]] || die "--jobs must be a positive integer"
 [[ -f "$PATCH_FILE" ]] || die "Missing trace patch: $PATCH_FILE"
-command -v git >/dev/null 2>&1 || die "git is required"
 
 prepare_source() {
   mkdir -p "$SOURCE_PARENT"
-  if [[ ! -d "$SOURCE_DIR/.git" ]]; then
-    [[ ! -e "$SOURCE_DIR" ]] || die "Refusing to replace non-git path: $SOURCE_DIR"
+  if [[ ! -e "$SOURCE_DIR" ]]; then
+    command -v git >/dev/null 2>&1 || die "git is required to download XNU source"
     log "Cloning Apple $XNU_TAG"
     git clone --quiet --depth 1 --branch "$XNU_TAG" "$XNU_REPOSITORY" "$SOURCE_DIR"
+  fi
+
+  if [[ -d "$SOURCE_DIR/.git" ]] && command -v git >/dev/null 2>&1; then
+    :
+  elif [[ -f "$SOURCE_DIR/.aspire4310-xnu-commit" ]] \
+    && [[ "$(sed -n '1p' "$SOURCE_DIR/.aspire4310-xnu-commit")" == "$XNU_COMMIT" ]]; then
+    grep -q '\[XNU-TRACE IO23\]' "$SOURCE_DIR/iokit/Kernel/IOStartIOKit.cpp" \
+      || die "Offline XNU source marker exists but trace patch validation failed"
+    log "Pinned patched source ready from the offline VM bundle: $SOURCE_DIR"
+    return
+  else
+    die "Refusing unverified XNU source path: $SOURCE_DIR"
   fi
 
   local actual_commit

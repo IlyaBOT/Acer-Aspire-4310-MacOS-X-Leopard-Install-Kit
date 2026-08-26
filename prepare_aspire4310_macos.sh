@@ -15,6 +15,9 @@ INSPECTOR="$ROOT_DIR/scripts/inspect_artifact.py"
 CONFIG_GENERATOR="$ROOT_DIR/scripts/generate_oc_config.py"
 TREE_VALIDATOR="$ROOT_DIR/scripts/validate_oc_tree.py"
 XNU_TRACE_BUILDER="$ROOT_DIR/scripts/build_xnu_trace.sh"
+XNU_TOOLS_PREPARER="$ROOT_DIR/scripts/prepare_xnu_legacy_tools.sh"
+XNU_BUNDLE_PACKAGER="$ROOT_DIR/scripts/package_xnu_build_bundle.sh"
+XNU_QEMU_VM="$ROOT_DIR/scripts/xnu_qemu_vm.sh"
 
 # Project-owned constant files.
 # shellcheck disable=SC1091
@@ -90,6 +93,11 @@ Non-destructive project operations:
   ./prepare_aspire4310_macos.sh --build --os snowleopard
   ./prepare_aspire4310_macos.sh --prepare-xnu-trace
   ./prepare_aspire4310_macos.sh --build-xnu-trace
+  ./prepare_aspire4310_macos.sh --prepare-xnu-toolchain
+  ./prepare_aspire4310_macos.sh --install-xnu-toolchain
+  ./prepare_aspire4310_macos.sh --package-xnu-build-bundle
+  ./prepare_aspire4310_macos.sh --create-xnu-qemu --retail "/path/to/Leopard.iso"
+  ./prepare_aspire4310_macos.sh --start-xnu-qemu [--retail "/path/to/Leopard.iso"]
 
 Replace only EFI/OpenDuet on an existing USB (macOS only):
   ./prepare_aspire4310_macos.sh --update-efi --os leopard --disk /dev/diskX \
@@ -1375,6 +1383,11 @@ while (($#)); do
     --build) set_mode build ;;
     --prepare-xnu-trace) set_mode prepare-xnu-trace ;;
     --build-xnu-trace) set_mode build-xnu-trace ;;
+    --prepare-xnu-toolchain) set_mode prepare-xnu-toolchain ;;
+    --install-xnu-toolchain) set_mode install-xnu-toolchain ;;
+    --package-xnu-build-bundle) set_mode package-xnu-build-bundle ;;
+    --create-xnu-qemu) set_mode create-xnu-qemu ;;
+    --start-xnu-qemu) set_mode start-xnu-qemu ;;
     --list-disks) set_mode list-disks ;;
     --make-usb) set_mode make-usb ;;
     --update-efi) set_mode update-efi ;;
@@ -1423,6 +1436,20 @@ case "$MODE" in
   build) run_build ;;
   prepare-xnu-trace) "$XNU_TRACE_BUILDER" --prepare-only ;;
   build-xnu-trace) "$XNU_TRACE_BUILDER" ;;
+  prepare-xnu-toolchain) "$XNU_TOOLS_PREPARER" --prepare-only ;;
+  install-xnu-toolchain) "$XNU_TOOLS_PREPARER" --install ;;
+  package-xnu-build-bundle) "$XNU_BUNDLE_PACKAGER" ;;
+  create-xnu-qemu)
+    [[ -n "$RETAIL" ]] || die "--create-xnu-qemu requires --retail /path/to/Leopard.iso"
+    "$XNU_QEMU_VM" --create --iso "$RETAIL"
+    ;;
+  start-xnu-qemu)
+    if [[ -n "$RETAIL" ]]; then
+      "$XNU_QEMU_VM" --start --iso "$RETAIL"
+    else
+      "$XNU_QEMU_VM" --start
+    fi
+    ;;
   list-disks) run_list_disks ;;
   make-usb) [[ -n "$DISK" ]] || die "--make-usb requires --disk /dev/diskX"; run_make_usb ;;
   update-efi) [[ -n "$DISK" ]] || die "--update-efi requires --disk /dev/diskX"; run_update_efi ;;

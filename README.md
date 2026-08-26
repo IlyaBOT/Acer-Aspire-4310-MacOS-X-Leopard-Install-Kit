@@ -187,6 +187,11 @@ input/kernels/snowleopard/{kernel,kernelcache,prelinkedkernel}
 `--build-xnu-trace` собирает RELEASE_I386 в совместимой legacy Xcode-среде и помещает его в
 `input/kernels/leopard/kernel`. Vanilla installer и vanilla EFI при этом не изменяются.
 
+Для изолированной сборки на Intel Mac доступны QEMU build-VM и офлайн bundle:
+`--package-xnu-build-bundle`, `--create-xnu-qemu` и `--start-xnu-qemu`. Гостевая macOS и
+Xcode в проект не скачиваются и не распространяются; используются предоставленные
+пользователем установочные носители.
+
 ## Chameleon fallback
 
 Мёртвый исторический URL больше не используется. Для явного fallback положите архив с `i386/boot0`, `boot1h`, `boot` в:

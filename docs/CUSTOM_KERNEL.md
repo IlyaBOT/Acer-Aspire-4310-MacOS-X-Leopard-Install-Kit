@@ -83,19 +83,48 @@ Builder намеренно останавливается, если какой-�
 Первый запуск сохраняет `minimal`, чтобы единственной переменной был kernel. После фото с
 последней `[XNU-TRACE ...]` меткой можно сделать отдельный A/B с `--kext-set smc`.
 
-### Изолированная build-VM
+### Изолированная QEMU build-VM
 
-Практичный вариант — маленькая Darwin VM на Apple host: Leopard 10.5.8 с Xcode 3.1.x или,
-как fallback, Snow Leopard 10.6.8 с Xcode 3.2.6. Достаточно 2 vCPU, 2 GB RAM и 20–24 GB
-HFS+ диска; 3D, звук и USB passthrough для сборки не нужны. После установки Xcode следует
-сделать snapshot, а сеть гостя можно отключить.
+Практичный вариант для Intel Mac — маленькая QEMU VM: Leopard 10.5.8 с Xcode 3.1.x или,
+как fallback, Snow Leopard 10.6.8 с Xcode 3.2.6. Профиль использует IA32 EDK2, минимальный
+OpenCore/FakeSMC, Penryn CPU, 1 vCPU, 2 GB RAM, 24 GB qcow2, IDE и e1000. Звук, 3D и USB
+passthrough для сборки не нужны.
 
-Не рассчитывать на современный GitHub TLS внутри Leopard. На host сначала выполнить
-`--prepare-xnu-trace`, затем передать весь checkout в VM через локальный `scp` или read-only
-образ. Cache содержит pinned Git tree, поэтому builder сможет повторно проверить commit и
-patch без сетевого доступа.
+По умолчанию используется TCG. Для Snow Leopard существует воспроизводимый upstream QEMU
+report: тот же guest загружается под TCG и перезагружается под HVF. Поэтому `--accel hvf`
+оставлен только как явный A/B, а не как рабочий default.
+
+На Intel Mac host:
+
+```bash
+brew install qemu
+./prepare_aspire4310_macos.sh --package-xnu-build-bundle
+./prepare_aspire4310_macos.sh --create-xnu-qemu \
+  --retail "/path/to/Leopard.iso"
+./prepare_aspire4310_macos.sh --start-xnu-qemu \
+  --retail "/path/to/Leopard.iso"
+```
+
+После установки guest запускается без `--retail`. NAT перенаправляет host
+`127.0.0.1:2222` на guest SSH port 22. Для этого в guest надо включить Remote Login.
+QEMU VM и её диск находятся только в ignored `output/xnu-qemu-vm/`.
+
+Не рассчитывать на современный GitHub TLS внутри Leopard. Host-команда
+`--package-xnu-build-bundle` заранее подготавливает patched XNU и pinned tool sources, затем
+создаёт `output/xnu-trace/aspire4310-xnu-build-vm.tar.gz`. Передать bundle в guest можно
+через локальный `scp -P 2222`; guest не требуется доступ к GitHub.
 
 Один `mach_kernel` или минимальный Darwin boot image не заменяет такую VM: сборке нужны
 работающий userland и host-программы. `relpath` и `decomment` собираются из pinned
 `bootstrap_cmds-60`, `seg_hack` и `libkld` — из `cctools-667.3`, а `kextsymboltool` — из
 `kext_tools-117`; эти версии совпадают с официальным Mac OS X 10.5.4 source manifest.
+Внутри распакованного bundle выполнить:
+
+```bash
+./scripts/prepare_xnu_legacy_tools.sh --install
+./scripts/build_xnu_trace.sh
+```
+
+Первый вызов устанавливает только проверенный набор host-tools в `/usr/local`; второй кладёт
+готовый kernel в `input/kernels/leopard/kernel`. Полученный файл надо скопировать обратно в
+одноимённый путь основного checkout.
