@@ -94,6 +94,7 @@ require_legacy_toolchain() {
     /usr/bin/strip \
     /usr/bin/unifdef \
     /usr/bin/gnutar \
+    /usr/local/bin/decomment \
     /usr/local/bin/relpath \
     /usr/local/bin/seg_hack \
     /usr/local/bin/kextsymboltool \

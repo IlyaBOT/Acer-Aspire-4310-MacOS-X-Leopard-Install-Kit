@@ -51,7 +51,8 @@ Patch добавляет только жёсткие `[XNU-TRACE ...]` вызо�
 ```
 
 Сама сборка XNU 1228 использует инструменты эпохи Leopard, которые отсутствуют в современном
-Xcode: i386-capable GCC, MIG, csh, `relpath`, `seg_hack`, `libkld` и `kextsymboltool`.
+Xcode: i386-capable GCC, MIG, csh, `decomment`, `relpath`, `seg_hack`, `libkld` и
+`kextsymboltool`.
 Builder намеренно останавливается, если какой-либо инструмент отсутствует или compiler не
 создаёт i386 Mach-O. Нужна изолированная legacy Darwin build-среда с Xcode 3.x и tools из
 соответствующего Apple open-source release:
@@ -81,3 +82,20 @@ Builder намеренно останавливается, если какой-�
 
 Первый запуск сохраняет `minimal`, чтобы единственной переменной был kernel. После фото с
 последней `[XNU-TRACE ...]` меткой можно сделать отдельный A/B с `--kext-set smc`.
+
+### Изолированная build-VM
+
+Практичный вариант — маленькая Darwin VM на Apple host: Leopard 10.5.8 с Xcode 3.1.x или,
+как fallback, Snow Leopard 10.6.8 с Xcode 3.2.6. Достаточно 2 vCPU, 2 GB RAM и 20–24 GB
+HFS+ диска; 3D, звук и USB passthrough для сборки не нужны. После установки Xcode следует
+сделать snapshot, а сеть гостя можно отключить.
+
+Не рассчитывать на современный GitHub TLS внутри Leopard. На host сначала выполнить
+`--prepare-xnu-trace`, затем передать весь checkout в VM через локальный `scp` или read-only
+образ. Cache содержит pinned Git tree, поэтому builder сможет повторно проверить commit и
+patch без сетевого доступа.
+
+Один `mach_kernel` или минимальный Darwin boot image не заменяет такую VM: сборке нужны
+работающий userland и host-программы. `relpath` и `decomment` собираются из pinned
+`bootstrap_cmds-60`, `seg_hack` и `libkld` — из `cctools-667.3`, а `kextsymboltool` — из
+`kext_tools-117`; эти версии совпадают с официальным Mac OS X 10.5.4 source manifest.
