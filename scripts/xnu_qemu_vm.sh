@@ -74,10 +74,26 @@ case "$ACCELERATOR" in tcg|hvf) ;; *) die "--accel must be tcg or hvf" ;; esac
 [[ "$(uname -s 2>/dev/null || true)" == "Darwin" ]] || die "Run this VM helper on the Intel Mac host"
 [[ "$(uname -m 2>/dev/null || true)" == "x86_64" ]] || die "This profile requires an Intel Mac host"
 
-QEMU_SYSTEM="$(command -v qemu-system-x86_64 || true)"
-QEMU_IMG="$(command -v qemu-img || true)"
+find_host_tool() {
+  local tool="$1" resolved candidate
+  resolved="$(command -v "$tool" || true)"
+  if [[ -n "$resolved" && -x "$resolved" ]]; then
+    printf '%s\n' "$resolved"
+    return
+  fi
+  for candidate in "/opt/local/bin/$tool" "/usr/local/bin/$tool" "/opt/homebrew/bin/$tool"; do
+    if [[ -x "$candidate" ]]; then
+      printf '%s\n' "$candidate"
+      return
+    fi
+  done
+  return 1
+}
+
+QEMU_SYSTEM="$(find_host_tool qemu-system-x86_64 || true)"
+QEMU_IMG="$(find_host_tool qemu-img || true)"
 [[ -x "$QEMU_SYSTEM" && -x "$QEMU_IMG" ]] \
-  || die "QEMU is missing. Install the official Homebrew formula with: brew install qemu"
+  || die "QEMU is missing. On macOS 12 install MacPorts, then run: sudo /opt/local/bin/port install qemu"
 
 find_ia32_firmware() {
   local candidate qemu_prefix

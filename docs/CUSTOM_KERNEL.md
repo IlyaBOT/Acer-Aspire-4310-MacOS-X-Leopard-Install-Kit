@@ -94,10 +94,27 @@ passthrough для сборки не нужны.
 report: тот же guest загружается под TCG и перезагружается под HVF. Поэтому `--accel hvf`
 оставлен только как явный A/B, а не как рабочий default.
 
-На Intel Mac host:
+На Intel Mac с поддерживаемой Homebrew версией macOS:
 
 ```bash
 brew install qemu
+```
+
+Homebrew больше не предоставляет Intel bottle актуального QEMU для macOS 12 Monterey, а
+сборка QEMU 11 требует более нового compiler, чем Apple Clang 14 этой системы. На Monterey
+использовать официальный MacPorts installer для macOS 12, затем:
+
+```bash
+sudo /opt/local/bin/port install qemu
+```
+
+MacPorts port выбирает собственный совместимый Clang и включает необходимые проекту
+x86_64, Cocoa, DMG и VVFAT возможности. Скрипт ищет QEMU как в `PATH`, так и напрямую в
+`/opt/local/bin`, поэтому перезапуск Fish после установки не обязателен.
+
+После установки QEMU:
+
+```bash
 ./prepare_aspire4310_macos.sh --package-xnu-build-bundle
 ./prepare_aspire4310_macos.sh --create-xnu-qemu \
   --retail "/path/to/Leopard.iso"
