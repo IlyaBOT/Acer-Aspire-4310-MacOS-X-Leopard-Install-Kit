@@ -122,6 +122,12 @@ store. Helper копирует оба исходных файла QEMU в ignore
 и никогда не изменяет firmware/template из Homebrew или MacPorts. Копирование также не даёт
 macOS filesystem compression пакета влиять на pflash I/O.
 
+VM ESP дополнительно получает matching IA32 `OpenPartitionDxe.efi`: retail Leopard image
+использует Apple Partition Map, которой нет в обычном EDK2 PartitionDxe. Только VM-копия
+`config.plist` получает этот driver и фиксированный `1024x768@32`/`UIScale=1`; физический
+Aspire profile остаётся без изменений. Cocoa запускается с `zoom-to-fit=off`, чтобы изменение
+размера окна не искажало framebuffer.
+
 После установки QEMU:
 
 ```bash
@@ -136,7 +142,7 @@ macOS filesystem compression пакета влиять на pflash I/O.
 `127.0.0.1:2222` на guest SSH port 22. Для этого в guest надо включить Remote Login.
 QEMU VM и её диск находятся только в ignored `output/xnu-qemu-vm/`.
 
-Combo Update и Developer DVD подключаются как отдельные read-only носители. QEMU читает
+Combo Update и Developer DVD подключаются как отдельные read-only IDE media. QEMU читает
 Apple DMG через штатный read-only `dmg` driver, поэтому исходные образы не конвертируются и
 не изменяются. Сначала обновить чистую 10.5.x VM до 10.5.8 и перезагрузить её, затем
 подключить Xcode 3.1.x Developer DVD:
@@ -149,7 +155,8 @@ Apple DMG через штатный read-only `dmg` driver, поэтому ис�
 ```
 
 `--guest-media` можно указать дважды, если installer ISO не подключён. Профиль i440fx
-ограничен двумя IDE optical devices. При установке Xcode надо оставить включённым пакет
+ограничен четырьмя IDE devices: два занимает ESP/qcow2, ещё два доступны образам. При
+установке Xcode надо оставить включённым пакет
 UNIX Development Support: он устанавливает compiler и command-line tools, необходимые
 legacy XNU build.
 

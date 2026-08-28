@@ -4,6 +4,9 @@ set -Eeuo pipefail
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 ROOT_DIR="$(cd -- "$SCRIPT_DIR/.." && pwd -P)"
 MAIN_BUILDER="$ROOT_DIR/prepare_aspire4310_macos.sh"
+ESP_CONFIGURATOR="$SCRIPT_DIR/configure_xnu_qemu_esp.py"
+TREE_VALIDATOR="$SCRIPT_DIR/validate_oc_tree.py"
+CURRENT_SOURCES="$ROOT_DIR/cache/current-sources.env"
 VM_DIR="$ROOT_DIR/output/xnu-qemu-vm"
 VM_DISK="$VM_DIR/leopard-build.qcow2"
 VM_ESP="$VM_DIR/ESP"
@@ -27,9 +30,9 @@ Usage:
   scripts/xnu_qemu_vm.sh --start [--iso "/path/to/Leopard.iso"] \
     [--guest-media "/path/to/update-or-developer-dvd.dmg"]... [--accel tcg|hvf]
 
-Guest media is attached read-only. Apple DMG images use QEMU's read-only dmg
-driver; ISO and CDR images use the raw driver. At most two optical images can
-be attached, including the optional Leopard installer.
+Guest media is attached as read-only IDE disks. Apple DMG images use QEMU's
+read-only dmg driver; ISO and CDR images use the raw driver. At most two media
+images can be attached, including the optional Leopard installer.
 
 The default accelerator is TCG. Upstream QEMU has a reproducible report of 10.6.8
 rebooting under HVF while the same guest boots under TCG. Try HVF only as an A/B test.
@@ -134,6 +137,28 @@ ensure_vm_firmware() {
   fi
 }
 
+ensure_vm_esp_profile() {
+  local OC_CACHE_REL="" oc_root partition_driver config ocvalidate
+  [[ -f "$CURRENT_SOURCES" ]] || die "OpenCore source metadata is missing: $CURRENT_SOURCES"
+  # Project-generated, scalar-only cache metadata.
+  # shellcheck disable=SC1090
+  source "$CURRENT_SOURCES"
+  [[ -n "$OC_CACHE_REL" ]] || die "OC_CACHE_REL is missing from $CURRENT_SOURCES"
+  oc_root="$ROOT_DIR/cache/$OC_CACHE_REL"
+  partition_driver="$oc_root/IA32/EFI/OC/Drivers/OpenPartitionDxe.efi"
+  config="$VM_ESP/EFI/OC/config.plist"
+  ocvalidate="$oc_root/Utilities/ocvalidate/ocvalidate"
+  [[ -f "$partition_driver" ]] || die "Matching IA32 OpenPartitionDxe.efi was not found"
+  [[ -f "$config" ]] || die "VM OpenCore config is missing: $config"
+
+  cp -f "$partition_driver" "$VM_ESP/EFI/OC/Drivers/OpenPartitionDxe.efi"
+  python3 "$ESP_CONFIGURATOR" "$config" --resolution "1024x768@32"
+  python3 "$TREE_VALIDATOR" "$config"
+  if [[ -x "$ocvalidate" ]]; then
+    "$ocvalidate" "$config"
+  fi
+}
+
 if [[ -n "$INSTALLER" ]]; then
   [[ "$INSTALLER" != *$'\n'* ]] || die "Installer path must not contain a newline"
   [[ "$INSTALLER" != *,* ]] || die "Installer path must not contain a comma"
@@ -231,6 +256,7 @@ create_vm() {
     || die "The IA32 OpenCore build did not produce BOOTIA32.efi"
   mkdir -p "$VM_DIR"
   cp -R "$built_esp" "$VM_ESP"
+  ensure_vm_esp_profile
   ensure_vm_firmware
   "$QEMU_IMG" create -f qcow2 "$VM_DISK" "${DISK_GB}G"
   printf '%s\n' "$INSTALLER" > "$VM_DIR/installer.path"
@@ -242,10 +268,11 @@ create_vm() {
 start_vm() {
   [[ -s "$VM_DISK" ]] || die "VM disk does not exist; run --create first"
   [[ -f "$VM_ESP/EFI/BOOT/BOOTIA32.efi" ]] || die "VM OpenCore ESP is incomplete"
+  ensure_vm_esp_profile
   ensure_vm_firmware
 
   local machine media media_format
-  local cd_index=2
+  local media_index=2
   local -a args
   machine="$(select_machine)"
   args=(
@@ -264,21 +291,21 @@ start_vm() {
     -usb
     -device usb-kbd
     -device usb-tablet
-    -display cocoa
+    -display "cocoa,zoom-to-fit=off,show-cursor=on"
     -no-reboot
   )
   if [[ -n "$INSTALLER" ]]; then
     [[ -f "$INSTALLER" ]] || die "Installer image not found: $INSTALLER"
-    args+=( -drive "file=$INSTALLER,format=raw,if=ide,index=$cd_index,media=cdrom,readonly=on" )
-    cd_index=$((cd_index + 1))
+    args+=( -drive "file=$INSTALLER,format=raw,if=ide,index=$media_index,media=disk,readonly=on" )
+    media_index=$((media_index + 1))
   fi
   for media in "${GUEST_MEDIA[@]}"; do
-    (( cd_index <= 3 )) || die "The i440fx IDE profile supports at most two optical images"
+    (( media_index <= 3 )) || die "The i440fx IDE profile supports at most two guest-media images"
     media_format="$(guest_media_format "$media")"
     "$QEMU_IMG" info -f "$media_format" "$media" >/dev/null \
       || die "QEMU cannot read guest media as $media_format: $media"
-    args+=( -drive "file=$media,format=$media_format,if=ide,index=$cd_index,media=cdrom,readonly=on" )
-    cd_index=$((cd_index + 1))
+    args+=( -drive "file=$media,format=$media_format,if=ide,index=$media_index,media=disk,readonly=on" )
+    media_index=$((media_index + 1))
   done
   log "Starting QEMU with $machine/$ACCELERATOR; host SSH forward is 127.0.0.1:$SSH_PORT"
   "$QEMU_SYSTEM" "${args[@]}"

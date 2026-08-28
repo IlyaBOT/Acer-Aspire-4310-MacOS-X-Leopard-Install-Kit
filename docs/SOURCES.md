@@ -24,6 +24,7 @@
 - QEMU read-only DMG image support: https://www.qemu.org/docs/master/system/images.html#read-only-formats
 - QEMU EDK2 IA32 pflash layout: https://gitlab.com/qemu-project/edk2/-/tree/edk2-stable202402/OvmfPkg
 - QEMU Snow Leopard HVF/TCG comparison: https://gitlab.com/qemu-project/qemu/-/issues/2646
+- OpenCore APM partition driver: https://github.com/acidanthera/OpenCorePkg/blob/1.0.7/Platform/OpenPartitionDxe/Apm.c
 - MacPorts macOS 12 installer and setup: https://guide.macports.org/#installing.macports
 - MacPorts QEMU port and variants: https://ports.macports.org/port/qemu/details/
 
