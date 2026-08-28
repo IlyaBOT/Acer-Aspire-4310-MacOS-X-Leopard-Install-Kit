@@ -117,6 +117,11 @@ x86_64, Cocoa, DMG и VVFAT возможности. Скрипт ищет QEMU �
 доступный `pc-i440fx-*`, не полагаясь на отсутствующий alias. Для диагностического A/B
 конкретный доступный профиль можно задать через `XNU_QEMU_MACHINE=...`.
 
+IA32 EDK2 подключается двумя pflash devices: immutable code и отдельный writable variable
+store. Helper копирует оба исходных файла QEMU в ignored-каталог VM, снимает запись с code
+и никогда не изменяет firmware/template из Homebrew или MacPorts. Копирование также не даёт
+macOS filesystem compression пакета влиять на pflash I/O.
+
 После установки QEMU:
 
 ```bash

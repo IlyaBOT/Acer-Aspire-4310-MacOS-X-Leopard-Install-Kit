@@ -7,6 +7,8 @@ MAIN_BUILDER="$ROOT_DIR/prepare_aspire4310_macos.sh"
 VM_DIR="$ROOT_DIR/output/xnu-qemu-vm"
 VM_DISK="$VM_DIR/leopard-build.qcow2"
 VM_ESP="$VM_DIR/ESP"
+VM_FIRMWARE_CODE="$VM_DIR/edk2-i386-code.fd"
+VM_FIRMWARE_VARS="$VM_DIR/edk2-i386-vars.fd"
 ACTION=""
 INSTALLER=""
 GUEST_MEDIA=()
@@ -97,13 +99,14 @@ QEMU_IMG="$(find_host_tool qemu-img || true)"
 [[ -x "$QEMU_SYSTEM" && -x "$QEMU_IMG" ]] \
   || die "QEMU is missing. On macOS 12 install MacPorts, then run: sudo /opt/local/bin/port install qemu"
 
-find_ia32_firmware() {
-  local candidate qemu_prefix
+find_qemu_data_file() {
+  local filename="$1" candidate qemu_prefix
   qemu_prefix="$(cd -- "$(dirname -- "$QEMU_SYSTEM")/.." && pwd -P)"
   for candidate in \
-    "$qemu_prefix/share/qemu/edk2-i386-code.fd" \
-    /usr/local/share/qemu/edk2-i386-code.fd \
-    /opt/homebrew/share/qemu/edk2-i386-code.fd; do
+    "$qemu_prefix/share/qemu/$filename" \
+    "/opt/local/share/qemu/$filename" \
+    "/usr/local/share/qemu/$filename" \
+    "/opt/homebrew/share/qemu/$filename"; do
     if [[ -s "$candidate" ]]; then
       printf '%s\n' "$candidate"
       return
@@ -112,8 +115,24 @@ find_ia32_firmware() {
   return 1
 }
 
-FIRMWARE="$(find_ia32_firmware)" \
+FIRMWARE_CODE_SOURCE="$(find_qemu_data_file edk2-i386-code.fd)" \
   || die "QEMU IA32 EDK2 firmware (edk2-i386-code.fd) was not found"
+FIRMWARE_VARS_TEMPLATE="$(find_qemu_data_file edk2-i386-vars.fd)" \
+  || die "QEMU IA32 EDK2 variable template (edk2-i386-vars.fd) was not found"
+
+ensure_vm_firmware() {
+  mkdir -p "$VM_DIR"
+  if [[ ! -s "$VM_FIRMWARE_CODE" ]]; then
+    cp -f "$FIRMWARE_CODE_SOURCE" "$VM_FIRMWARE_CODE"
+    chmod a-w "$VM_FIRMWARE_CODE"
+    log "Copied IA32 EDK2 code into the isolated VM directory"
+  fi
+  if [[ ! -s "$VM_FIRMWARE_VARS" ]]; then
+    cp -f "$FIRMWARE_VARS_TEMPLATE" "$VM_FIRMWARE_VARS"
+    chmod u+w "$VM_FIRMWARE_VARS"
+    log "Created a private writable IA32 EDK2 variable store"
+  fi
+}
 
 if [[ -n "$INSTALLER" ]]; then
   [[ "$INSTALLER" != *$'\n'* ]] || die "Installer path must not contain a newline"
@@ -212,6 +231,7 @@ create_vm() {
     || die "The IA32 OpenCore build did not produce BOOTIA32.efi"
   mkdir -p "$VM_DIR"
   cp -R "$built_esp" "$VM_ESP"
+  ensure_vm_firmware
   "$QEMU_IMG" create -f qcow2 "$VM_DISK" "${DISK_GB}G"
   printf '%s\n' "$INSTALLER" > "$VM_DIR/installer.path"
   log "Created: $VM_DISK"
@@ -222,6 +242,7 @@ create_vm() {
 start_vm() {
   [[ -s "$VM_DISK" ]] || die "VM disk does not exist; run --create first"
   [[ -f "$VM_ESP/EFI/BOOT/BOOTIA32.efi" ]] || die "VM OpenCore ESP is incomplete"
+  ensure_vm_firmware
 
   local machine media media_format
   local cd_index=2
@@ -233,7 +254,8 @@ start_vm() {
     -cpu "Penryn,vendor=GenuineIntel"
     -smp 1
     -m "$MEMORY_MB"
-    -bios "$FIRMWARE"
+    -drive "if=pflash,format=raw,unit=0,readonly=on,file=$VM_FIRMWARE_CODE"
+    -drive "if=pflash,format=raw,unit=1,file=$VM_FIRMWARE_VARS"
     -boot menu=on
     -drive "file=fat:rw:$VM_ESP,format=raw,if=ide,index=0,media=disk"
     -drive "file=$VM_DISK,format=qcow2,if=ide,index=1,media=disk"

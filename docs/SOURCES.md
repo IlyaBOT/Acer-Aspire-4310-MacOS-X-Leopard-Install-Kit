@@ -22,6 +22,7 @@
 - Official Mac OS X 10.5.4 source manifest: https://github.com/apple-oss-distributions/distribution-macOS/tree/mac-os-x-1054
 - QEMU system emulation and accelerators: https://www.qemu.org/docs/master/system/introduction.html
 - QEMU read-only DMG image support: https://www.qemu.org/docs/master/system/images.html#read-only-formats
+- QEMU EDK2 IA32 pflash layout: https://gitlab.com/qemu-project/edk2/-/tree/edk2-stable202402/OvmfPkg
 - QEMU Snow Leopard HVF/TCG comparison: https://gitlab.com/qemu-project/qemu/-/issues/2646
 - MacPorts macOS 12 installer and setup: https://guide.macports.org/#installing.macports
 - MacPorts QEMU port and variants: https://ports.macports.org/port/qemu/details/

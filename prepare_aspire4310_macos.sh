@@ -159,7 +159,7 @@ trap cleanup EXIT INT TERM
 on_error() {
   local line="$1"
   local status="$2"
-  warn "Command failed at line $line (status $status). No USB action is retried automatically."
+  warn "Command failed at line $line (status $status). The failed operation is not retried automatically."
 }
 trap 'on_error "$LINENO" "$?"' ERR
 
