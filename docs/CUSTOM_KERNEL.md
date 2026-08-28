@@ -128,12 +128,17 @@ VM ESP дополнительно получает matching IA32 `OpenPartitionD
 Aspire profile остаётся без изменений. Cocoa запускается с `zoom-to-fit=off`, чтобы изменение
 размера окна не искажало framebuffer.
 
-В OVMF часть низкой памяти занята firmware, а Leopard до появления KASLR требует
-фиксированные низкие адреса для kernel и kext modules. Поэтому VM-only профиль включает
-`AllowRelocationBlock=true` вместе с требуемыми `AvoidRuntimeDefrag=true` и
-`ProvideCustomSlide=true`. OpenCore использует временный scratch block и перед стартом
-ядра переносит его на ожидаемые Leopard адреса. Это устраняет `Error allocating ... alloc
-type 2` / `Couldn't allocate driver module memory`; профиль физического Aspire не меняется.
+В OVMF часть низкой памяти занята firmware, а Leopard использует фиксированные адреса для
+kernel и kext modules. Инъекция FakeSMC сначала заканчивается `Couldn't allocate driver
+module memory`; `AllowRelocationBlock` обходит allocation, но IA32 `boot.efi` затем падает
+при финальном переносе блока. Поэтому VM не инжектирует FakeSMC и не включает relocation
+block. Вместо этого helper добавляет штатный QEMU `isa-applesmc`, читая OSK0/OSK1 напрямую
+из SMC Intel Mac небольшим локально собранным helper. Ключ не записывается в репозиторий и
+не печатается в логах. Физическая сборка Aspire по-прежнему использует FakeSMC.
+
+Если QEMU аварийно завершится, CPU reset/guest-error log сохраняется в
+`output/xnu-qemu-vm/qemu-debug.log`, а helper печатает путь к последнему OpenCore log на
+VM ESP. Это позволяет отличить XNU reboot/triple fault от ошибки OpenCore.
 
 После установки QEMU:
 

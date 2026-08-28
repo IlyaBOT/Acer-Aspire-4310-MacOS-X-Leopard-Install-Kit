@@ -26,6 +26,8 @@
 - QEMU Snow Leopard HVF/TCG comparison: https://gitlab.com/qemu-project/qemu/-/issues/2646
 - OpenCore APM partition driver: https://github.com/acidanthera/OpenCorePkg/blob/1.0.7/Platform/OpenPartitionDxe/Apm.c
 - OpenCore QEMU relocation-block diagnosis: https://github.com/acidanthera/bugtracker/issues/1854
+- QEMU 11.1 AppleSMC implementation: https://github.com/qemu/qemu/blob/v11.1.0/hw/misc/applesmc.c
+- QEMU host AppleSMC forwarding design: https://lists.gnu.org/archive/html/qemu-devel/2021-10/msg05708.html
 - MacPorts macOS 12 installer and setup: https://guide.macports.org/#installing.macports
 - MacPorts QEMU port and variants: https://ports.macports.org/port/qemu/details/
 

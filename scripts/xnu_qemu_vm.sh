@@ -12,6 +12,9 @@ VM_DISK="$VM_DIR/leopard-build.qcow2"
 VM_ESP="$VM_DIR/ESP"
 VM_FIRMWARE_CODE="$VM_DIR/edk2-i386-code.fd"
 VM_FIRMWARE_VARS="$VM_DIR/edk2-i386-vars.fd"
+VM_SMC_READER="$VM_DIR/read-apple-smc-osk"
+VM_QEMU_LOG="$VM_DIR/qemu-debug.log"
+SMC_READER_SOURCE="$SCRIPT_DIR/read_apple_smc_osk.c"
 ACTION=""
 INSTALLER=""
 GUEST_MEDIA=()
@@ -43,6 +46,7 @@ Environment overrides:
   XNU_QEMU_DISK_GB=24
   XNU_QEMU_SSH_PORT=2222
   XNU_QEMU_MACHINE=pc-i440fx-6.0
+  XNU_QEMU_OSK=<64-byte host AppleSMC key>  (fallback override only)
 EOF
 }
 
@@ -136,6 +140,27 @@ ensure_vm_firmware() {
     chmod u+w "$VM_FIRMWARE_VARS"
     log "Created a private writable IA32 EDK2 variable store"
   fi
+}
+
+read_host_apple_smc_osk() {
+  local compiler osk="${XNU_QEMU_OSK:-}"
+  if [[ -z "$osk" ]]; then
+    compiler="$(find_host_tool clang || true)"
+    [[ -x "$compiler" ]] || die "Apple clang is required to read the host AppleSMC OSK"
+    if [[ ! -x "$VM_SMC_READER" || "$SMC_READER_SOURCE" -nt "$VM_SMC_READER" ]]; then
+      "$compiler" -O2 -Wall -Wextra -Wno-multichar \
+        -framework IOKit -framework CoreFoundation \
+        "$SMC_READER_SOURCE" -o "$VM_SMC_READER" \
+        || die "Could not build the host AppleSMC reader"
+      chmod 700 "$VM_SMC_READER"
+    fi
+    osk="$($VM_SMC_READER)" \
+      || die "Could not read OSK0/OSK1 from the host AppleSMC; set XNU_QEMU_OSK explicitly"
+  fi
+  [[ ${#osk} -eq 64 ]] || die "XNU_QEMU_OSK must contain exactly 64 characters"
+  [[ "$osk" != *$'\n'* && "$osk" != *,* ]] \
+    || die "XNU_QEMU_OSK contains a character unsafe for the QEMU device option"
+  printf '%s' "$osk"
 }
 
 ensure_vm_esp_profile() {
@@ -272,10 +297,13 @@ start_vm() {
   ensure_vm_esp_profile
   ensure_vm_firmware
 
-  local machine media media_format
+  local machine media media_format apple_smc_osk latest_oc_log qemu_status
   local media_index=2
   local -a args
   machine="$(select_machine)"
+  "$QEMU_SYSTEM" -device help 2>&1 | grep 'isa-applesmc' >/dev/null \
+    || die "This QEMU build does not provide the isa-applesmc device"
+  apple_smc_osk="$(read_host_apple_smc_osk)"
   args=(
     -name "Aspire4310 XNU Build VM"
     -machine "$machine,accel=$ACCELERATOR"
@@ -289,10 +317,13 @@ start_vm() {
     -drive "file=$VM_DISK,format=qcow2,if=ide,index=1,media=disk"
     -netdev "user,id=net0,hostfwd=tcp:127.0.0.1:$SSH_PORT-:22"
     -device "e1000,netdev=net0"
+    -device "isa-applesmc,osk=$apple_smc_osk"
     -usb
     -device usb-kbd
     -device usb-tablet
     -display "cocoa,zoom-to-fit=off,show-cursor=on"
+    -D "$VM_QEMU_LOG"
+    -d "cpu_reset,guest_errors"
     -no-reboot
   )
   if [[ -n "$INSTALLER" ]]; then
@@ -309,7 +340,18 @@ start_vm() {
     media_index=$((media_index + 1))
   done
   log "Starting QEMU with $machine/$ACCELERATOR; host SSH forward is 127.0.0.1:$SSH_PORT"
-  "$QEMU_SYSTEM" "${args[@]}"
+  log "QEMU reset/error log: $VM_QEMU_LOG"
+  if "$QEMU_SYSTEM" "${args[@]}"; then
+    qemu_status=0
+  else
+    qemu_status=$?
+  fi
+  latest_oc_log="$(find "$VM_ESP" -maxdepth 1 -type f -iname 'opencore-*.txt' -print \
+    | sort | tail -n 1)"
+  if [[ -n "$latest_oc_log" ]]; then
+    log "Latest OpenCore log: $latest_oc_log"
+  fi
+  return "$qemu_status"
 }
 
 case "$ACTION" in

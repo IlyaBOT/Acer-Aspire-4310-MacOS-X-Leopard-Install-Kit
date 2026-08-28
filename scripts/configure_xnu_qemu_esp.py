@@ -27,15 +27,19 @@ def main() -> int:
     output["Resolution"] = args.resolution
     output["UIScale"] = 1
 
-    # OVMF occupies part of the low address range where pre-KASLR EfiBoot
-    # expects to place the kernel and injected mkext modules. Let OpenCore use
-    # its temporary relocation block instead of failing AllocatePages at the
-    # fixed Leopard load address. The two prerequisite quirks are explicit so
-    # this VM override does not depend on Sample.plist defaults.
+    # QEMU provides a hardware AppleSMC device, so the VM must not inject the
+    # physical-machine FakeSMC fallback into Leopard's fixed-address mkext.
+    # Avoiding that module also avoids the OVMF low-memory collision without a
+    # relocation block, whose final copy is unsafe with this IA32 EfiBoot path.
+    kexts = config["Kernel"]["Add"]
+    kexts[:] = [
+        entry
+        for entry in kexts
+        if entry.get("BundlePath", "").casefold() != "fakesmc.kext"
+    ]
+
     booter = config["Booter"]["Quirks"]
-    booter["AllowRelocationBlock"] = True
-    booter["AvoidRuntimeDefrag"] = True
-    booter["ProvideCustomSlide"] = True
+    booter["AllowRelocationBlock"] = False
 
     drivers = config["UEFI"]["Drivers"]
     matching = [entry for entry in drivers if entry.get("Path") == PARTITION_DRIVER]
@@ -86,7 +90,7 @@ def main() -> int:
 
     print(
         f"Configured QEMU ESP: {PARTITION_DRIVER}, "
-        f"resolution {args.resolution}, UIScale 1, relocation block enabled"
+        f"resolution {args.resolution}, UIScale 1, hardware AppleSMC profile"
     )
     return 0
 
