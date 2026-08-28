@@ -30,9 +30,10 @@ Usage:
   scripts/xnu_qemu_vm.sh --start [--iso "/path/to/Leopard.iso"] \
     [--guest-media "/path/to/update-or-developer-dvd.dmg"]... [--accel tcg|hvf]
 
-Guest media is attached as read-only IDE disks. Apple DMG images use QEMU's
-read-only dmg driver; ISO and CDR images use the raw driver. At most two media
-images can be attached, including the optional Leopard installer.
+Guest media is attached as IDE disks through temporary copy-on-write snapshots.
+The source images stay read-only: Apple DMG images use QEMU's dmg driver, while
+ISO and CDR images use the raw driver. At most two media images can be attached,
+including the optional Leopard installer.
 
 The default accelerator is TCG. Upstream QEMU has a reproducible report of 10.6.8
 rebooting under HVF while the same guest boots under TCG. Try HVF only as an A/B test.
@@ -296,7 +297,7 @@ start_vm() {
   )
   if [[ -n "$INSTALLER" ]]; then
     [[ -f "$INSTALLER" ]] || die "Installer image not found: $INSTALLER"
-    args+=( -drive "file=$INSTALLER,format=raw,if=ide,index=$media_index,media=disk,readonly=on" )
+    args+=( -drive "file=$INSTALLER,format=raw,if=ide,index=$media_index,media=disk,snapshot=on" )
     media_index=$((media_index + 1))
   fi
   for media in "${GUEST_MEDIA[@]}"; do
@@ -304,7 +305,7 @@ start_vm() {
     media_format="$(guest_media_format "$media")"
     "$QEMU_IMG" info -f "$media_format" "$media" >/dev/null \
       || die "QEMU cannot read guest media as $media_format: $media"
-    args+=( -drive "file=$media,format=$media_format,if=ide,index=$media_index,media=disk,readonly=on" )
+    args+=( -drive "file=$media,format=$media_format,if=ide,index=$media_index,media=disk,snapshot=on" )
     media_index=$((media_index + 1))
   done
   log "Starting QEMU with $machine/$ACCELERATOR; host SSH forward is 127.0.0.1:$SSH_PORT"

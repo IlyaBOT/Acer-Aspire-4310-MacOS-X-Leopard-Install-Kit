@@ -142,10 +142,11 @@ Aspire profile остаётся без изменений. Cocoa запуска�
 `127.0.0.1:2222` на guest SSH port 22. Для этого в guest надо включить Remote Login.
 QEMU VM и её диск находятся только в ignored `output/xnu-qemu-vm/`.
 
-Combo Update и Developer DVD подключаются как отдельные read-only IDE media. QEMU читает
-Apple DMG через штатный read-only `dmg` driver, поэтому исходные образы не конвертируются и
-не изменяются. Сначала обновить чистую 10.5.x VM до 10.5.8 и перезагрузить её, затем
-подключить Xcode 3.1.x Developer DVD:
+Combo Update и Developer DVD подключаются как отдельные IDE media. QEMU читает Apple DMG
+через штатный `dmg` driver, а для каждого исходного образа создаёт временный copy-on-write
+snapshot. Поэтому IDE-устройство доступно гостю на запись, но исходный DMG/ISO не
+конвертируется и не изменяется. Сначала обновить чистую 10.5.x VM до 10.5.8 и
+перезагрузить её, затем подключить Xcode 3.1.x Developer DVD:
 
 ```bash
 ./prepare_aspire4310_macos.sh --start-xnu-qemu \
