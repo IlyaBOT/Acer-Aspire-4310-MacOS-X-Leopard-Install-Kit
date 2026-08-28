@@ -27,6 +27,16 @@ def main() -> int:
     output["Resolution"] = args.resolution
     output["UIScale"] = 1
 
+    # OVMF occupies part of the low address range where pre-KASLR EfiBoot
+    # expects to place the kernel and injected mkext modules. Let OpenCore use
+    # its temporary relocation block instead of failing AllocatePages at the
+    # fixed Leopard load address. The two prerequisite quirks are explicit so
+    # this VM override does not depend on Sample.plist defaults.
+    booter = config["Booter"]["Quirks"]
+    booter["AllowRelocationBlock"] = True
+    booter["AvoidRuntimeDefrag"] = True
+    booter["ProvideCustomSlide"] = True
+
     drivers = config["UEFI"]["Drivers"]
     matching = [entry for entry in drivers if entry.get("Path") == PARTITION_DRIVER]
     if matching:
@@ -76,7 +86,7 @@ def main() -> int:
 
     print(
         f"Configured QEMU ESP: {PARTITION_DRIVER}, "
-        f"resolution {args.resolution}, UIScale 1"
+        f"resolution {args.resolution}, UIScale 1, relocation block enabled"
     )
     return 0
 
