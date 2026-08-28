@@ -14,6 +14,7 @@ ACCELERATOR="${XNU_QEMU_ACCEL:-tcg}"
 MEMORY_MB="${XNU_QEMU_MEMORY_MB:-2048}"
 DISK_GB="${XNU_QEMU_DISK_GB:-24}"
 SSH_PORT="${XNU_QEMU_SSH_PORT:-2222}"
+MACHINE_OVERRIDE="${XNU_QEMU_MACHINE:-}"
 
 usage() {
   cat <<'EOF'
@@ -35,6 +36,7 @@ Environment overrides:
   XNU_QEMU_MEMORY_MB=2048
   XNU_QEMU_DISK_GB=24
   XNU_QEMU_SSH_PORT=2222
+  XNU_QEMU_MACHINE=pc-i440fx-6.0
 EOF
 }
 
@@ -142,11 +144,49 @@ guest_media_format() {
 normalize_guest_media
 
 select_machine() {
-  if "$QEMU_SYSTEM" -machine help 2>/dev/null | grep -q 'pc-i440fx-2\.11'; then
-    printf '%s\n' 'pc-i440fx-2.11'
-  else
-    printf '%s\n' 'pc-i440fx'
+  local machine_help candidate
+  machine_help="$("$QEMU_SYSTEM" -machine help 2>/dev/null)" \
+    || die "Could not query QEMU machine types"
+
+  if [[ -n "$MACHINE_OVERRIDE" ]]; then
+    [[ "$MACHINE_OVERRIDE" != *$'\n'* && "$MACHINE_OVERRIDE" != *,* ]] \
+      || die "XNU_QEMU_MACHINE must be one machine-type name"
+    printf '%s\n' "$machine_help" | awk -v machine="$MACHINE_OVERRIDE" \
+      '$1 == machine { found = 1 } END { exit !found }' \
+      || die "Requested QEMU machine type is unavailable: $MACHINE_OVERRIDE"
+    printf '%s\n' "$MACHINE_OVERRIDE"
+    return
   fi
+
+  candidate="$(printf '%s\n' "$machine_help" | awk '
+    $1 ~ /^pc-i440fx-[0-9]+\.[0-9]+$/ {
+      version = $1
+      sub(/^pc-i440fx-/, "", version)
+      split(version, component, ".")
+      major = component[1] + 0
+      minor = component[2] + 0
+      if (!found || major < best_major || (major == best_major && minor < best_minor)) {
+        found = 1
+        best_major = major
+        best_minor = minor
+        best = $1
+      }
+    }
+    END { if (found) print best }
+  ')"
+  if [[ -n "$candidate" ]]; then
+    printf '%s\n' "$candidate"
+    return
+  fi
+
+  for candidate in pc pc-i440fx; do
+    if printf '%s\n' "$machine_help" | awk -v machine="$candidate" \
+      '$1 == machine { found = 1 } END { exit !found }'; then
+      printf '%s\n' "$candidate"
+      return
+    fi
+  done
+  die "This QEMU build exposes no i440fx machine type"
 }
 
 create_vm() {
