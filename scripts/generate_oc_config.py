@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import plistlib
 import uuid
 from pathlib import Path, PurePosixPath
@@ -28,12 +29,33 @@ BOOT_ARGS = {
 LEOPARD_BOOT_ARGS = "cpus=1"
 
 
-def boot_args_for(os_profile: str, preset: str) -> str:
+def resolve_kernel_arch(os_profile: str, requested: str | None) -> str:
+    """Resolve the target XNU architecture independently from the build host."""
+    if requested is None:
+        return "i386-user32" if os_profile == "leopard" else "i386"
+    if os_profile == "leopard" and requested == "x86_64":
+        raise ValueError("Leopard 10.5 has no supported x86_64 kernel profile here")
+    if os_profile == "snowleopard" and requested == "i386-user32":
+        # Snow Leopard normally benefits from its 64-bit-capable userspace even when
+        # the kernel stays i386 for GMA950 compatibility.
+        return "i386"
+    return requested
+
+
+def kext_arch_for(kernel_arch: str) -> str:
+    return "i386" if kernel_arch == "i386-user32" else kernel_arch
+
+
+def boot_args_for(os_profile: str, preset: str, kernel_arch: str) -> str:
     parts = [BOOT_ARGS[preset]]
     if os_profile == "leopard":
-        # KernelArch=i386-user32 selects both the i386 kernel and 32-bit userspace;
-        # OpenCore adds -legacy itself.  Keep only the physical one-core topology here.
+        # Preserve the known Leopard diagnostic baseline while the Darwin 9 hang
+        # remains under investigation.
         parts.append(LEOPARD_BOOT_ARGS)
+    elif os_profile == "snowleopard" and kernel_arch == "x86_64":
+        # MacBook2,1 is the historically appropriate GMA950 SMBIOS. On Snow
+        # Leopard client, force the experimental 64-bit kernel explicitly.
+        parts.append("arch=x86_64")
     return " ".join(part for part in parts if part)
 
 
@@ -56,7 +78,9 @@ def clear_samples(config: dict) -> None:
     config["UEFI"]["ReservedMemory"] = []
 
 
-def read_kext(oc_root: Path, bundle_path: str, minimum: str, maximum: str) -> dict:
+def read_kext(
+    oc_root: Path, bundle_path: str, minimum: str, maximum: str, arch: str
+) -> dict:
     relative = PurePosixPath(bundle_path)
     bundle = (oc_root / "Kexts").joinpath(*relative.parts)
     info_path = bundle / "Contents" / "Info.plist"
@@ -67,9 +91,9 @@ def read_kext(oc_root: Path, bundle_path: str, minimum: str, maximum: str) -> di
     bundle_id = info.get("CFBundleIdentifier", "UNKNOWN")
     version = info.get("CFBundleVersion", "UNKNOWN")
     return {
-        "Arch": "i386",
+        "Arch": arch,
         "BundlePath": str(relative),
-        "Comment": f"{bundle_id} {version}; statically checked i386 candidate",
+        "Comment": f"{bundle_id} {version}; statically checked {arch} candidate",
         "Enabled": True,
         "ExecutablePath": executable_path,
         "MaxKernel": maximum,
@@ -89,12 +113,27 @@ def main() -> int:
     parser.add_argument(
         "--runtime-profile", required=True, choices=("off", "legacy", "modern")
     )
+    parser.add_argument(
+        "--kernel-arch",
+        choices=("i386-user32", "i386", "x86_64"),
+        default=os.environ.get("ASPIRE4310_KERNEL_ARCH"),
+        help=(
+            "Target XNU architecture. If omitted, Leopard uses i386-user32 and "
+            "Snow Leopard uses i386. ASPIRE4310_KERNEL_ARCH can provide the same override."
+        ),
+    )
     parser.add_argument("--driver", action="append", default=[])
     parser.add_argument("--kext", action="append", default=[])
     parser.add_argument("--acpi", action="append", default=[])
     parser.add_argument("--drop-duplicate-apic", action="store_true")
     parser.add_argument("--oc-version", default="UNKNOWN")
     args = parser.parse_args()
+
+    try:
+        kernel_arch = resolve_kernel_arch(args.os, args.kernel_arch)
+    except ValueError as exc:
+        parser.error(str(exc))
+    kext_arch = kext_arch_for(kernel_arch)
 
     with args.sample.open("rb") as handle:
         config = plistlib.load(handle)
@@ -140,7 +179,8 @@ def main() -> int:
 
     minimum, maximum = KERNEL_RANGES[args.os]
     config["Kernel"]["Add"] = [
-        read_kext(args.oc_root, path, minimum, maximum) for path in args.kext
+        read_kext(args.oc_root, path, minimum, maximum, kext_arch)
+        for path in args.kext
     ]
     emulate = config["Kernel"]["Emulate"]
     emulate["Cpuid1Data"] = b""
@@ -157,7 +197,7 @@ def main() -> int:
     scheme = config["Kernel"]["Scheme"]
     scheme["CustomKernel"] = args.kernel == "custom"
     scheme["FuzzyMatch"] = True
-    scheme["KernelArch"] = "i386-user32" if args.os == "leopard" else "i386"
+    scheme["KernelArch"] = kernel_arch
     scheme["KernelCache"] = "Auto"
 
     boot = config["Misc"]["Boot"]
@@ -187,7 +227,7 @@ def main() -> int:
             "DefaultBackgroundColor": b"\x00\x00\x00\x00"
         },
         "7C436110-AB2A-4BBB-A880-FE41995C9F82": {
-            "boot-args": boot_args_for(args.os, args.boot_preset),
+            "boot-args": boot_args_for(args.os, args.boot_preset, kernel_arch),
             "prev-lang:kbd": b"en-US:0",
             "run-efi-updater": "No",
         },
@@ -239,7 +279,10 @@ def main() -> int:
     # OpenDuet already provides variable routing; OpenRuntime is not required for it here.
     config["UEFI"]["Quirks"]["RequestBootVarRouting"] = False
 
-    config["#Revision"] = f"Aspire 4310 profile generated from OpenCore {args.oc_version} Sample.plist"
+    config["#Revision"] = (
+        f"Aspire 4310 profile generated from OpenCore {args.oc_version} Sample.plist; "
+        f"{args.os}/{kernel_arch}"
+    )
     args.output.parent.mkdir(parents=True, exist_ok=True)
     with args.output.open("wb") as handle:
         plistlib.dump(config, handle, fmt=plistlib.FMT_XML, sort_keys=False)
