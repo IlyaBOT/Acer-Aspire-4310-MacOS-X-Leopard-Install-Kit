@@ -55,7 +55,8 @@ if ! XCODEBUILD="$(find_xcodebuild)"; then
       ATTACH_OUT="$(hdiutil attach -nobrowse "$XCODE_MEDIA")"
       MOUNT="$(printf '%s\n' "$ATTACH_OUT" | awk '/\/Volumes\// {sub(/^.*\/Volumes\//,"/Volumes/"); print; exit}')"
       [[ -n "$MOUNT" && -d "$MOUNT" ]] || die "could not determine mounted Xcode volume"
-      PKG="$(find "$MOUNT" -maxdepth 4 \( -name 'Xcode.mpkg' -o -name '*Xcode*.mpkg' -o -name '*Xcode*.pkg' \) -print | head -1)"
+      # Snow Leopard ships BSD find, which has no GNU -maxdepth.
+      PKG="$(find "$MOUNT" \( -name 'Xcode.mpkg' -o -name '*Xcode*.mpkg' -o -name '*Xcode*.pkg' \) -print 2>/dev/null | head -1)"
       ;;
     *.mpkg|*.pkg)
       PKG="$XCODE_MEDIA"
