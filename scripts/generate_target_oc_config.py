@@ -86,6 +86,7 @@ def main() -> int:
     parser.add_argument("--mlb", required=True)
     parser.add_argument("--uuid-seed", required=True)
     parser.add_argument("--kernel-arch", default="i386", choices=("i386-user32", "i386", "x86_64"))
+    parser.add_argument("--kernel-cache", default="Auto", choices=("Auto", "Cacheless", "Mkext", "Prelinked"))
     parser.add_argument("--boot-preset", default="diagnostic", choices=tuple(BOOT_ARGS))
     parser.add_argument("--runtime-profile", default="legacy", choices=("off", "legacy", "modern"))
     parser.add_argument("--custom-kernel", action="store_true", help="Enable OpenCore Kernel/Scheme/CustomKernel. The D640 default does not use this; its AMD mach_kernel is installed on the HFS+ volume instead.")
@@ -163,7 +164,7 @@ def main() -> int:
     scheme["CustomKernel"] = args.custom_kernel
     scheme["FuzzyMatch"] = True
     scheme["KernelArch"] = args.kernel_arch
-    scheme["KernelCache"] = "Auto"
+    scheme["KernelCache"] = args.kernel_cache
 
     boot = config["Misc"]["Boot"]
     boot["HideAuxiliary"] = False
