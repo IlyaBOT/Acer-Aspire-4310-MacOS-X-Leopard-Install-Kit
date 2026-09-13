@@ -205,6 +205,17 @@ install_openduet() {
     cd "$BUILD_ROOT/OpenDuet"
     printf '%s\n%s\n' "$disk_name" "$part_name" | "$BOOT_TOOL"
   )
+
+  # Upstream BootInstallBase.sh mounts the EFI partition on Linux so it can
+  # copy boot{IA32,X64}, but it intentionally leaves that mount available for
+  # inspection.  Our non-interactive flow needs the partition free for the
+  # read-only verification pass and for reliable cleanup.
+  sync
+  local mp
+  while IFS= read -r mp; do
+    [[ -n "$mp" ]] || continue
+    umount "$mp" 2>/dev/null || true
+  done < <(lsblk -nro MOUNTPOINTS "$ESP_PART" | awk 'NF')
 }
 
 verify_target() {

@@ -205,6 +205,7 @@ run_build() {
     --mlb "$TARGET_MLB"
     --uuid-seed "$TARGET_UUID_SEED"
     --kernel-arch i386
+    --kernel-cache Cacheless
     --boot-preset "$BOOT_PRESET"
     --runtime-profile off
     --driver HfsPlus32.efi
@@ -256,6 +257,7 @@ run_build() {
 - Target: $TARGET_MODEL
 - CPU: $TARGET_CPU / $TARGET_CPU_CPUID
 - Architecture: IA32 OpenDuet + i386 Snow Leopard kernel path
+- Kernel cache mode: Cacheless (force direct /mach_kernel bring-up)
 - GPU: $TARGET_GPU ($TARGET_GPU_PCI)
 - OpenCore: $OC_VERSION $OC_VARIANT
 - SMBIOS bring-up identity: $TARGET_SMBIOS
@@ -280,7 +282,7 @@ case "$MODE" in
     run_build
     ;;
   collect-hardware)
-    "$COLLECTOR" "$ROOT_DIR/input/hardware" emachines-d640-n930
+    "$COLLECTOR" "$ROOT_DIR/input/hardware"
     ;;
   list-disks)
     "$LINUX_USB" --list-disks
