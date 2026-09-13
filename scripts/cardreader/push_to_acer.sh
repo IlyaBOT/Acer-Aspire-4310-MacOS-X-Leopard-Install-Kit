@@ -30,11 +30,12 @@ scp -O "${SSH_OPTS[@]}" \
   "$SCRIPT_DIR/bootstrap_snowleopard.sh" \
   "$SCRIPT_DIR/build_snowleopard.sh" \
   "$SCRIPT_DIR/install_opencore_snowleopard.sh" \
+  "$SCRIPT_DIR/remove_opencore_snowleopard.sh" \
   "$TARGET:$REMOTE_DIR/"
 
 log "source deployed"
 printf '\nOn the Acer:\n'
 printf '  cd %s\n' "$REMOTE_DIR"
-printf '  chmod +x bootstrap_snowleopard.sh build_snowleopard.sh install_opencore_snowleopard.sh\n'
+printf '  chmod +x bootstrap_snowleopard.sh build_snowleopard.sh install_opencore_snowleopard.sh remove_opencore_snowleopard.sh\n'
 printf '  ./bootstrap_snowleopard.sh\n'
 printf '  ./build_snowleopard.sh .\n'
