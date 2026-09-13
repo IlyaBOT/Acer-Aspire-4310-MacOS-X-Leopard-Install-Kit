@@ -96,14 +96,16 @@ if [[ "$DISABLE_SLE" -eq 1 ]]; then
 fi
 
 log "installing KEXT into OpenCore"
-rm -rf "$KEXTS/VoodooSDHC.kext"
-cp -R "$KEXT" "$KEXTS/VoodooSDHC.kext"
+sudo rm -rf "$KEXTS/VoodooSDHC.kext"
+sudo cp -R "$KEXT" "$KEXTS/VoodooSDHC.kext"
 
 PB=/usr/libexec/PlistBuddy
 # Count dictionaries in Kernel->Add. PlistBuddy's array print format uses one
-# 'Dict {' line per element on Snow Leopard.
-COUNT="$($PB -c 'Print :Kernel:Add' "$CONFIG" | grep -c 'Dict {' | tr -d ' ')"
-[[ -n "$COUNT" ]] || COUNT=0
+# 'Dict {' line per element on Snow Leopard. grep exits 1 for zero matches, so
+# protect the pipeline under set -o pipefail.
+COUNT="$($PB -c 'Print :Kernel:Add' "$CONFIG" 2>/dev/null | grep -c 'Dict {' || true)"
+COUNT="$(printf '%s' "$COUNT" | tr -d '[:space:]')"
+[[ "$COUNT" =~ ^[0-9]+$ ]] || COUNT=0
 INDEX=""
 i=0
 while [[ "$i" -lt "$COUNT" ]]; do
@@ -117,7 +119,7 @@ done
 
 if [[ -z "$INDEX" ]]; then
   INDEX="$COUNT"
-  $PB -c "Add :Kernel:Add:$INDEX dict" "$CONFIG"
+  sudo "$PB" -c "Add :Kernel:Add:$INDEX dict" "$CONFIG"
   log "created Kernel->Add entry $INDEX"
 else
   log "updating existing Kernel->Add entry $INDEX"
@@ -125,10 +127,10 @@ fi
 
 set_field() {
   local key="$1" type="$2" value="$3" path=":Kernel:Add:$INDEX:$key"
-  if $PB -c "Print $path" "$CONFIG" >/dev/null 2>&1; then
-    $PB -c "Set $path $value" "$CONFIG"
+  if "$PB" -c "Print $path" "$CONFIG" >/dev/null 2>&1; then
+    sudo "$PB" -c "Set $path $value" "$CONFIG"
   else
-    $PB -c "Add $path $type $value" "$CONFIG"
+    sudo "$PB" -c "Add $path $type $value" "$CONFIG"
   fi
 }
 
