@@ -7,21 +7,26 @@ TARGET_DIR="$ROOT_DIR/targets/emachines-d640-n930"
 TARGET_CONF="$TARGET_DIR/target.conf"
 KEXT_MANIFEST="$TARGET_DIR/kexts-snowleopard.conf"
 CURRENT_SOURCES="$ROOT_DIR/cache/current-sources.env"
+KERNEL_ENV="$ROOT_DIR/cache/amd-kernels.env"
 MAIN_BUILDER="$ROOT_DIR/prepare_aspire4310_macos.sh"
 GENERATOR="$SCRIPT_DIR/generate_target_oc_config.py"
 INSPECTOR="$SCRIPT_DIR/inspect_artifact.py"
 VALIDATOR="$SCRIPT_DIR/validate_oc_tree.py"
 LINUX_USB="$SCRIPT_DIR/linux_make_usb.sh"
 COLLECTOR="$SCRIPT_DIR/collect_linux_hardware_v2.sh"
+KERNEL_DOWNLOADER="$SCRIPT_DIR/download_amd_snowleopard_kernels.sh"
+UPGRADE_STAGER="$SCRIPT_DIR/stage_amd_1068_upgrade.sh"
 
 MODE=""
 DISK=""
 RETAIL=""
-AMD_KERNEL=""
+KERNEL_1063=""
+KERNEL_1068=""
 KEXT_SET="minimal"
 SATA_MODE="native"
 BOOT_PRESET="diagnostic"
 ACPI_MODE="native"
+RESTORE_MODE="auto"
 ALLOW_INTERNAL=0
 DRY_RUN=0
 
@@ -32,25 +37,36 @@ eMachines D640 / Phenom II N930 Snow Leopard helper
 Preparation/build (Linux or macOS):
   ./scripts/prepare_emachines_d640_snowleopard.sh --doctor
   ./scripts/prepare_emachines_d640_snowleopard.sh --download
+  ./scripts/prepare_emachines_d640_snowleopard.sh --download-kernels
   ./scripts/prepare_emachines_d640_snowleopard.sh --build
   ./scripts/prepare_emachines_d640_snowleopard.sh --collect-hardware
+  ./scripts/prepare_emachines_d640_snowleopard.sh --stage-1068-upgrade
 
-Linux USB operations:
+Linux ISO/USB operations:
+  ./scripts/prepare_emachines_d640_snowleopard.sh --inspect-retail \
+    --retail /path/to/SnowLeopard10.6.3.iso
   ./scripts/prepare_emachines_d640_snowleopard.sh --list-disks
   sudo ./scripts/prepare_emachines_d640_snowleopard.sh --make-usb \
-    --disk /dev/sdX --retail /path/to/SnowLeopard-Retail.iso \
-    --amd-kernel /path/to/legacy_amd_mach_kernel
+    --disk /dev/sdX --retail /path/to/SnowLeopard10.6.3.iso
   sudo ./scripts/prepare_emachines_d640_snowleopard.sh --verify --disk /dev/sdX
   sudo ./scripts/prepare_emachines_d640_snowleopard.sh --update-efi --disk /dev/sdX
+
+Kernel options:
+  --kernel-1063 PATH               override downloaded Darwin 10.3.0 kernel
+  --kernel-1068 PATH               override downloaded Darwin 10.8.0 kernel
+  --amd-kernel PATH                deprecated alias for --kernel-1063
 
 Build options:
   --kext-set smc|minimal|full      default: minimal
   --sata native|injected           default: native
   --acpi native|patched            patched reads input/targets/emachines-d640-n930/acpi/*.aml
   --boot-preset normal|verbose|safe|diagnostic
+  --restore-mode auto|block|files  Linux installer restore strategy; default auto
 
-Important: this target requires a user-supplied Snow Leopard AMD K10 kernel for
-real hardware. The EFI build itself is allowed without one so it can be audited.
+--download now also downloads/extracts the historical AMD kernels for 10.6.3
+(Darwin 10.3.0) and 10.6.8 (Darwin 10.8.0). The project records SHA-256
+locally and validates i386/version metadata, but these old third-party binaries
+do not have project-maintained trusted reference hashes.
 USAGE
 }
 
@@ -65,19 +81,25 @@ while (($#)); do
   case "$1" in
     --doctor) set_mode doctor ;;
     --download) set_mode download ;;
+    --download-kernels) set_mode download-kernels ;;
     --build) set_mode build ;;
     --collect-hardware) set_mode collect-hardware ;;
+    --stage-1068-upgrade) set_mode stage-1068 ;;
+    --inspect-retail) set_mode inspect-retail ;;
     --list-disks) set_mode list-disks ;;
     --make-usb) set_mode make-usb ;;
     --update-efi) set_mode update-efi ;;
     --verify) set_mode verify ;;
     --disk) need_value "$@"; shift; DISK="$1" ;;
     --retail) need_value "$@"; shift; RETAIL="$1" ;;
-    --amd-kernel) need_value "$@"; shift; AMD_KERNEL="$1" ;;
+    --kernel-1063) need_value "$@"; shift; KERNEL_1063="$1" ;;
+    --kernel-1068) need_value "$@"; shift; KERNEL_1068="$1" ;;
+    --amd-kernel) need_value "$@"; shift; KERNEL_1063="$1"; warn "--amd-kernel is deprecated; use --kernel-1063" ;;
     --kext-set) need_value "$@"; shift; KEXT_SET="$1" ;;
     --sata) need_value "$@"; shift; SATA_MODE="$1" ;;
     --acpi) need_value "$@"; shift; ACPI_MODE="$1" ;;
     --boot-preset) need_value "$@"; shift; BOOT_PRESET="$1" ;;
+    --restore-mode) need_value "$@"; shift; RESTORE_MODE="$1" ;;
     --allow-internal) ALLOW_INTERNAL=1 ;;
     --dry-run) DRY_RUN=1 ;;
     -h|--help) usage; exit 0 ;;
@@ -90,6 +112,7 @@ case "$KEXT_SET" in smc|minimal|full) ;; *) die "Invalid --kext-set" ;; esac
 case "$SATA_MODE" in native|injected) ;; *) die "Invalid --sata" ;; esac
 case "$ACPI_MODE" in native|patched) ;; *) die "Invalid --acpi" ;; esac
 case "$BOOT_PRESET" in normal|verbose|safe|diagnostic) ;; *) die "Invalid --boot-preset" ;; esac
+case "$RESTORE_MODE" in auto|block|files) ;; *) die "Invalid --restore-mode" ;; esac
 
 [[ -f "$TARGET_CONF" ]] || die "Missing target profile: $TARGET_CONF"
 # shellcheck disable=SC1090
@@ -108,21 +131,61 @@ load_sources() {
   [[ -d "$LEGACY_KEXTS_ROOT/FAT" ]] || die "Legacy-Kexts cache incomplete: $LEGACY_KEXTS_ROOT"
 }
 
+load_kernel_cache() {
+  [[ -f "$KERNEL_ENV" ]] || return 0
+  # shellcheck disable=SC1090
+  source "$KERNEL_ENV"
+  [[ -n "$KERNEL_1063" ]] || KERNEL_1063="${AMD_KERNEL_1063:-}"
+  [[ -n "$KERNEL_1068" ]] || KERNEL_1068="${AMD_KERNEL_1068:-}"
+}
+
+validate_kernel_release() {
+  local kernel="$1" darwin="$2" xnu="$3"
+  [[ -f "$kernel" ]] || die "AMD kernel not found: $kernel"
+  python3 "$INSPECTOR" --binary "$kernel" --require-arch i386 --quiet \
+    || die "AMD kernel does not expose a confirmed i386 Mach-O slice: $kernel"
+  if ! strings "$kernel" | grep -Fq "Darwin Kernel Version $darwin"; then
+    strings "$kernel" | grep -Fq "xnu-$xnu" \
+      || die "Kernel $kernel does not match Darwin $darwin / xnu-$xnu"
+  fi
+}
+
+resolve_1063_kernel() {
+  load_kernel_cache
+  [[ -n "$KERNEL_1063" ]] || die "10.6.3 AMD kernel is missing. Run --download/--download-kernels or pass --kernel-1063."
+  validate_kernel_release "$KERNEL_1063" "10.3.0" "1504.3.12"
+}
+
+resolve_1068_kernel() {
+  load_kernel_cache
+  [[ -n "$KERNEL_1068" ]] || die "10.6.8 AMD kernel is missing. Run --download/--download-kernels or pass --kernel-1068."
+  validate_kernel_release "$KERNEL_1068" "10.8.0" "1504.15.3"
+}
+
 run_doctor() {
   printf 'Target: %s\nCPU: %s (%s)\nGPU: %s [%s]\nFirmware: %s\n' \
     "$TARGET_MODEL" "$TARGET_CPU" "$TARGET_CPU_CPUID" "$TARGET_GPU" "$TARGET_GPU_PCI" "$TARGET_FIRMWARE"
-  printf 'Required target kernel: custom AMD K10 Snow Leopard kernel (%s)\n' "$TARGET_KERNEL_ARCH"
+  printf 'OpenCore kernel policy: %s + LegacyCommpage=%s\n' "$TARGET_KERNEL_ARCH" "$TARGET_LEGACY_COMMPAGE"
+  printf 'Required installer kernel: Darwin 10.3.0 / xnu-1504.3.12 AMD legacy kernel\n'
+  printf 'Required 10.6.8 kernel: Darwin 10.8.0 / xnu-1504.15.3 AMD legacy kernel\n'
   printf 'Build host: %s %s\n' "$(uname -s)" "$(uname -m)"
-  printf '\nBuild tools:\n'
+  printf '\nBuild/download tools:\n'
   local cmd missing=0
-  for cmd in bash python3 curl unzip file; do
+  for cmd in bash python3 curl unzip file strings sha256sum; do
     if have "$cmd"; then printf '  OK      %s\n' "$cmd"; else printf '  MISSING %s\n' "$cmd"; missing=1; fi
   done
+  printf '\nHistorical PKG extraction (one path is required when kernels are not cached):\n'
+  for cmd in bsdtar xar cpio; do
+    if have "$cmd"; then printf '  OK/WARN %s\n' "$cmd"; else printf '  MISSING %s\n' "$cmd"; fi
+  done
   printf '\nLinux USB tools (required only for --make-usb):\n'
-  for cmd in lsblk findmnt losetup sgdisk mkfs.vfat mkfs.hfsplus rsync fdisk uuidgen; do
+  for cmd in lsblk findmnt losetup sgdisk mkfs.vfat mkfs.hfsplus fsck.hfsplus blockdev rsync fdisk uuidgen dd; do
     if have "$cmd"; then printf '  OK/WARN %s\n' "$cmd"; else printf '  MISSING %s\n' "$cmd"; fi
   done
   [[ -f "$CURRENT_SOURCES" ]] && printf '\nCached OpenCore sources: PRESENT\n' || printf '\nCached OpenCore sources: NOT PREPARED\n'
+  load_kernel_cache
+  [[ -n "$KERNEL_1063" && -f "$KERNEL_1063" ]] && printf 'AMD 10.6.3 kernel: PRESENT (%s)\n' "$KERNEL_1063" || printf 'AMD 10.6.3 kernel: NOT PREPARED\n'
+  [[ -n "$KERNEL_1068" && -f "$KERNEL_1068" ]] && printf 'AMD 10.6.8 kernel: PRESENT (%s)\n' "$KERNEL_1068" || printf 'AMD 10.6.8 kernel: NOT PREPARED\n'
   return "$missing"
 }
 
@@ -165,12 +228,18 @@ collect_kext_args() {
   find "$1/Kexts" -type d -name '*.kext' -print | sed "s#^$1/Kexts/##" | LC_ALL=C sort
 }
 
+run_download() {
+  "$MAIN_BUILDER" --download
+  "$KERNEL_DOWNLOADER" --all
+}
+
 run_build() {
   load_sources
+  load_kernel_cache
   local ia32="$OC_CACHE_ROOT/IA32"
   local oc="$BUILD_ROOT/ESP/EFI/OC"
   local esp="$BUILD_ROOT/ESP"
-  local relative item hfs32 validator
+  local relative item hfs32 validator kernel_hash="NOT BUNDLED"
   local -a args
 
   [[ -f "$ia32/EFI/OC/OpenCore.efi" ]] || die "This OpenCore release/cache has no IA32 OpenCore binary: $ia32"
@@ -204,10 +273,11 @@ run_build() {
     --serial "$TARGET_SERIAL"
     --mlb "$TARGET_MLB"
     --uuid-seed "$TARGET_UUID_SEED"
-    --kernel-arch i386
+    --kernel-arch "$TARGET_KERNEL_ARCH"
     --kernel-cache Cacheless
     --boot-preset "$BOOT_PRESET"
     --runtime-profile off
+    --extra-boot-arg arch=i386
     --driver HfsPlus32.efi
     --driver Ps2KeyboardDxe.efi
     --driver Ps2MouseDxe.efi
@@ -243,12 +313,11 @@ run_build() {
   fi
 
   mkdir -p "$BUILD_ROOT/Payload"
-  if [[ -n "$AMD_KERNEL" ]]; then
-    [[ -f "$AMD_KERNEL" ]] || die "AMD kernel not found: $AMD_KERNEL"
-    python3 "$INSPECTOR" --binary "$AMD_KERNEL" --require-arch i386 --quiet \
-      || die "Supplied AMD kernel does not expose a confirmed i386 Mach-O slice"
-    cp -a "$AMD_KERNEL" "$BUILD_ROOT/Payload/mach_kernel"
+  if [[ -n "$KERNEL_1063" && -f "$KERNEL_1063" ]]; then
+    validate_kernel_release "$KERNEL_1063" "10.3.0" "1504.3.12"
+    cp -a "$KERNEL_1063" "$BUILD_ROOT/Payload/mach_kernel"
     sha256sum "$BUILD_ROOT/Payload/mach_kernel" > "$BUILD_ROOT/Payload/mach_kernel.sha256"
+    kernel_hash="$(sha256sum "$BUILD_ROOT/Payload/mach_kernel" | awk '{print $1}')"
   fi
 
   cat > "$BUILD_ROOT/BUILD_REPORT.md" <<REPORT
@@ -256,8 +325,13 @@ run_build() {
 
 - Target: $TARGET_MODEL
 - CPU: $TARGET_CPU / $TARGET_CPU_CPUID
-- Architecture: IA32 OpenDuet + i386 Snow Leopard kernel path
-- Kernel cache mode: Cacheless (force direct /mach_kernel bring-up)
+- OpenCore architecture: IA32 OpenDuet
+- KernelArch: $TARGET_KERNEL_ARCH
+- LegacyCommpage: $TARGET_LEGACY_COMMPAGE
+- Kernel cache mode: Cacheless
+- Installer AMD kernel expected: Darwin 10.3.0 / xnu-1504.3.12
+- Installer AMD kernel SHA-256: $kernel_hash
+- 10.6.8 AMD kernel expected: Darwin 10.8.0 / xnu-1504.15.3
 - GPU: $TARGET_GPU ($TARGET_GPU_PCI)
 - OpenCore: $OC_VERSION $OC_VARIANT
 - SMBIOS bring-up identity: $TARGET_SMBIOS
@@ -265,39 +339,48 @@ run_build() {
 - SATA mode: $SATA_MODE
 - ACPI mode: $ACPI_MODE
 - Boot preset: $BOOT_PRESET
-- AMD kernel bundled in Payload: $([[ -f "$BUILD_ROOT/Payload/mach_kernel" ]] && printf YES || printf NO)
 
-The profile does not auto-patch HD 5470 connectors, AR9285 Wi-Fi, ALC272 AppleHDA,
-or DSDT. Those remain gated on the physical Linux hardware dump.
+The first-boot path intentionally remains i386-user32 + Cacheless + LegacyCommpage.
+HD 5470 framebuffer, AR9285 and ALC272 runtime patches remain opt-in until their
+Snow Leopard binaries are validated on the physical machine.
 REPORT
   log "Build complete: $BUILD_ROOT"
 }
 
 case "$MODE" in
   doctor) run_doctor ;;
-  download)
-    "$MAIN_BUILDER" --download
-    ;;
+  download) run_download ;;
+  download-kernels) "$KERNEL_DOWNLOADER" --all ;;
   build)
+    load_kernel_cache
     run_build
     ;;
   collect-hardware)
     "$COLLECTOR" "$ROOT_DIR/input/hardware"
     ;;
+  stage-1068)
+    resolve_1068_kernel
+    "$UPGRADE_STAGER" --kernel "$KERNEL_1068"
+    ;;
+  inspect-retail)
+    [[ -n "$RETAIL" ]] || die "--inspect-retail requires --retail"
+    "$LINUX_USB" --inspect-retail --retail "$RETAIL"
+    ;;
   list-disks)
     "$LINUX_USB" --list-disks
     ;;
   make-usb)
-    [[ -n "$DISK" && -n "$RETAIL" && -n "$AMD_KERNEL" ]] \
-      || die "--make-usb requires --disk, --retail and --amd-kernel"
+    [[ -n "$DISK" && -n "$RETAIL" ]] || die "--make-usb requires --disk and --retail"
+    resolve_1063_kernel
     run_build
-    usb_args=(--make-usb --disk "$DISK" --retail "$RETAIL" --build-root "$BUILD_ROOT" --amd-kernel "$AMD_KERNEL")
+    usb_args=(--make-usb --disk "$DISK" --retail "$RETAIL" --build-root "$BUILD_ROOT" --amd-kernel "$KERNEL_1063" --expected-kernel-version 10.3.0 --restore-mode "$RESTORE_MODE")
     (( ALLOW_INTERNAL == 1 )) && usb_args+=(--allow-internal)
     (( DRY_RUN == 1 )) && usb_args+=(--dry-run)
     "$LINUX_USB" "${usb_args[@]}"
     ;;
   update-efi)
     [[ -n "$DISK" ]] || die "--update-efi requires --disk"
+    load_kernel_cache
     run_build
     usb_args=(--update-efi --disk "$DISK" --build-root "$BUILD_ROOT")
     (( ALLOW_INTERNAL == 1 )) && usb_args+=(--allow-internal)
@@ -306,7 +389,7 @@ case "$MODE" in
     ;;
   verify)
     [[ -n "$DISK" ]] || die "--verify requires --disk"
-    "$LINUX_USB" --verify --disk "$DISK"
+    "$LINUX_USB" --verify --disk "$DISK" --expected-kernel-version 10.3.0
     ;;
   "") usage; exit 2 ;;
   *) die "Unexpected mode: $MODE" ;;
