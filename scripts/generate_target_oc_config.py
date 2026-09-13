@@ -8,6 +8,7 @@ OpenCore release so new mandatory keys are inherited from that release.
 from __future__ import annotations
 
 import argparse
+import os
 import plistlib
 import uuid
 from pathlib import Path, PurePosixPath
@@ -23,6 +24,10 @@ BOOT_ARGS = {
     "safe": "-v -x keepsyms=1 debug=0x100",
     "diagnostic": "-v keepsyms=1 debug=0x108 io=0x20007f",
 }
+
+
+def env_yes(name: str) -> bool:
+    return os.environ.get(name, "").strip().upper() in {"1", "YES", "TRUE", "ON"}
 
 
 def clear_samples(config: dict) -> None:
@@ -90,7 +95,21 @@ def main() -> int:
     parser.add_argument("--boot-preset", default="diagnostic", choices=tuple(BOOT_ARGS))
     parser.add_argument("--runtime-profile", default="legacy", choices=("off", "legacy", "modern"))
     parser.add_argument("--custom-kernel", action="store_true", help="Enable OpenCore Kernel/Scheme/CustomKernel. The D640 default does not use this; its AMD mach_kernel is installed on the HFS+ volume instead.")
-    parser.add_argument("--provide-current-cpu-info", action="store_true")
+    parser.add_argument(
+        "--legacy-commpage",
+        dest="legacy_commpage",
+        action="store_true",
+        default=env_yes("TARGET_LEGACY_COMMPAGE"),
+        help="Enable OpenCore LegacyCommpage. Defaults from TARGET_LEGACY_COMMPAGE.",
+    )
+    parser.add_argument("--no-legacy-commpage", dest="legacy_commpage", action="store_false")
+    parser.add_argument(
+        "--provide-current-cpu-info",
+        dest="provide_current_cpu_info",
+        action="store_true",
+        default=env_yes("TARGET_PROVIDE_CURRENT_CPU_INFO"),
+    )
+    parser.add_argument("--no-provide-current-cpu-info", dest="provide_current_cpu_info", action="store_false")
     parser.add_argument("--driver", action="append", default=[])
     parser.add_argument("--kext", action="append", default=[])
     parser.add_argument("--acpi", action="append", default=[])
@@ -157,7 +176,7 @@ def main() -> int:
 
     quirks = config["Kernel"]["Quirks"]
     quirks["AppleCpuPmCfgLock"] = False
-    quirks["LegacyCommpage"] = False
+    quirks["LegacyCommpage"] = args.legacy_commpage
     quirks["ProvideCurrentCpuInfo"] = args.provide_current_cpu_info
 
     scheme = config["Kernel"]["Scheme"]
