@@ -8,6 +8,7 @@ UPSTREAM_COMMIT="be8dc240a3b979d629660daea0d59c108ea86311"
 CACHE_DIR="$ROOT_DIR/cache/cardreader/VoodooSDHCI-upstream"
 OUT_DIR="$ROOT_DIR/output/cardreader/VoodooSDHCI-O2Micro-7120"
 PATCHER="$SCRIPT_DIR/apply_o2micro_7120_patch.py"
+HARDENER="$SCRIPT_DIR/harden_o2micro_cardinit.py"
 
 log() { printf '[cardreader-prepare] %s\n' "$*"; }
 die() { printf '[cardreader-prepare] ERROR: %s\n' "$*" >&2; exit 1; }
@@ -15,6 +16,7 @@ die() { printf '[cardreader-prepare] ERROR: %s\n' "$*" >&2; exit 1; }
 command -v git >/dev/null 2>&1 || die "git is required"
 command -v python3 >/dev/null 2>&1 || die "python3 is required"
 [[ -f "$PATCHER" ]] || die "missing patcher: $PATCHER"
+[[ -f "$HARDENER" ]] || die "missing hardener: $HARDENER"
 
 mkdir -p "$(dirname "$CACHE_DIR")" "$(dirname "$OUT_DIR")"
 
@@ -51,6 +53,7 @@ mkdir -p "$OUT_DIR"
 )
 
 python3 "$PATCHER" "$OUT_DIR"
+python3 "$HARDENER" "$OUT_DIR"
 printf '%s\n' "$UPSTREAM_COMMIT" > "$OUT_DIR/.upstream-commit"
 
 log "prepared source: $OUT_DIR"
