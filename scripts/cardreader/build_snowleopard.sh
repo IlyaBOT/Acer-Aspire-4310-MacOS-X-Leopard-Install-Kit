@@ -58,10 +58,16 @@ log "Info.plist"
 plutil -lint "$KEXT/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c 'Print :IOKitPersonalities:SD Card Host Controller:IOPCIMatch' "$KEXT/Contents/Info.plist"
 
+# Snow Leopard's kextutil validates ownership as well as linkage. Validate a
+# disposable root-owned copy so subsequent builds can still clean BUILD_DIR.
+STAGE="/tmp/VoodooSDHC-o2micro-validate.kext"
+sudo rm -rf "$STAGE"
+sudo cp -R "$KEXT" "$STAGE"
+sudo chown -R root:wheel "$STAGE"
+sudo chmod -R 755 "$STAGE"
 log "kextutil validation"
-sudo chown -R root:wheel "$KEXT"
-sudo chmod -R 755 "$KEXT"
-sudo kextutil -t -v 2 "$KEXT" || die "kextutil validation failed"
+sudo kextutil -t -v 2 "$STAGE" || die "kextutil validation failed"
+sudo rm -rf "$STAGE"
 
 log "SUCCESS: $KEXT"
 printf '%s\n' "$KEXT" > "$SOURCE_DIR/.last-built-kext"
