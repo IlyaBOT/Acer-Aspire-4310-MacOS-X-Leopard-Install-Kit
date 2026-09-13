@@ -1,0 +1,48 @@
+name: Card reader source patch check
+
+on:
+  push:
+    branches:
+      - cardreader-o2micro-7120
+  workflow_dispatch:
+
+jobs:
+  patch-source:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Prepare patched source
+        run: |
+          chmod +x scripts/cardreader/prepare_o2micro_source.sh
+          ./scripts/cardreader/prepare_o2micro_source.sh
+
+      - name: Validate O2Micro diagnostic changes
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          root = Path('output/cardreader/VoodooSDHCI-O2Micro-7120')
+          cpp = (root / 'VoodooSDHC.cpp').read_text()
+          hdr = (root / 'VoodooSDHC.h').read_text()
+          plist = (root / 'Info.plist').read_text()
+          checks = {
+              'PCI ID': '0x71201217' in plist,
+              'PIO': '#define USE_SDMA 0' in cpp,
+              'read-only': '#define READONLY_DRIVER\t1' in cpp,
+              'failed-media state': 'kCardInitFailed' in hdr and 'kCardInitFailed' in cpp,
+              'command timeout': 'timeout AFTER CMD' in cpp,
+              'reset timeout': 'reset timeout type=' in cpp,
+              'fixed interrupt wait': 'interrupt timeout mask=' in cpp,
+              'old infinite command wait removed': 'while(this->PCIRegP[slot]->PresentState & ComInhibitCMD);' not in cpp,
+          }
+          for name, ok in checks.items():
+              print(f'{name}: {ok}')
+          if not all(checks.values()):
+              raise SystemExit(1)
+          PY
+
+      - name: Show source delta
+        run: |
+          git --no-pager diff --no-index \
+            cache/cardreader/VoodooSDHCI-upstream \
+            output/cardreader/VoodooSDHCI-O2Micro-7120 || test $? -eq 1
