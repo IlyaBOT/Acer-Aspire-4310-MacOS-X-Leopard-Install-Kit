@@ -4,13 +4,15 @@ set -Eeuo pipefail
 KEXT=""
 EFI_DEVICE="${EFI_DEVICE:-disk0s1}"
 DISABLE_SLE=0
+APPLY=0
 
 usage() {
   cat <<'EOF'
 Usage:
   install_opencore_snowleopard.sh /path/to/VoodooSDHC.kext [--efi-device disk0s1] [--disable-sle-conflicts]
 
-The script backs up OpenCore config.plist, installs VoodooSDHC.kext into
+The script validates the KEXT and previews the target paths by default. With
+--apply it backs up OpenCore config.plist, installs VoodooSDHC.kext into
 EFI/OC/Kexts, and adds/updates an i386 Kernel->Add entry limited to Darwin 10.x.
 
 --disable-sle-conflicts moves IOSDHCIBlockDevice.kext/VoodooSDHC.kext out of
@@ -27,6 +29,7 @@ while (($#)); do
       EFI_DEVICE="$1"
       ;;
     --disable-sle-conflicts) DISABLE_SLE=1 ;;
+    --apply) APPLY=1 ;;
     -h|--help) usage; exit 0 ;;
     --*) echo "Unknown option: $1" >&2; exit 2 ;;
     *)
@@ -55,6 +58,16 @@ if [[ "$DISABLE_SLE" -eq 0 ]]; then
   if [[ -d /System/Library/Extensions/IOSDHCIBlockDevice.kext || -d /System/Library/Extensions/VoodooSDHC.kext ]]; then
     die "conflicting card-reader KEXT exists in /System/Library/Extensions; re-run with --disable-sle-conflicts"
   fi
+fi
+
+if [[ "$APPLY" -eq 0 ]]; then
+  echo "Preview only; nothing will be changed."
+  echo "  source: $KEXT"
+  echo "  EFI device: $EFI_DEVICE"
+  echo "  target: /Volumes/EFI/EFI/OC/Kexts/VoodooSDHC.kext"
+  echo "  config: /Volumes/EFI/EFI/OC/config.plist"
+  echo "Run again with --apply to perform the change."
+  exit 0
 fi
 
 if [[ ! -f /Volumes/EFI/EFI/OC/config.plist ]]; then
