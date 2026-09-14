@@ -21,6 +21,8 @@ jobs:
         run: |
           python3 - <<'PY'
           from pathlib import Path
+          import re
+
           root = Path('output/cardreader/VoodooSDHCI-O2Micro-7120')
           cpp = (root / 'VoodooSDHC.cpp').read_text()
           hdr = (root / 'VoodooSDHC.h').read_text()
@@ -28,6 +30,7 @@ jobs:
 
           power_pos = cpp.find('if (!powerSD(slot))')
           init_clock_pos = cpp.find('if (!calcClock(slot, 400000))')
+          broken_iolog_literal = re.search(r'IOLog\("[^"\n]*\n', cpp) is not None
 
           checks = {
               'PCI ID': '0x71201217' in plist,
@@ -42,6 +45,7 @@ jobs:
               'restores command status enables': 'NormalIntStatusEn |= (CmdComplete | ErrorInterrupt)' in cpp,
               'v1/v2 clock divider': 'UInt16 encodedDiv' in cpp and 'encodedDiv | InternalClockEn | SDClockEn' in cpp,
               'power before initial clock': 0 <= power_pos < init_clock_pos,
+              'generated IOLog strings stay single-line': not broken_iolog_literal,
           }
           for name, ok in checks.items():
               print(f'{name}: {ok}')
