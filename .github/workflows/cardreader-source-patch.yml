@@ -1,0 +1,72 @@
+name: Card reader source patch check
+
+on:
+  push:
+    branches:
+      - main
+      - cardreader-o2micro-7120
+    paths:
+      - '.github/workflows/cardreader-source-patch.yml'
+      - 'drivers/o2micro-7120/**'
+      - 'scripts/cardreader/**'
+  pull_request:
+    paths:
+      - '.github/workflows/cardreader-source-patch.yml'
+      - 'drivers/o2micro-7120/**'
+      - 'scripts/cardreader/**'
+  workflow_dispatch:
+
+jobs:
+  patch-source:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Prepare patched source
+        run: |
+          chmod +x scripts/cardreader/prepare_o2micro_source.sh
+          ./scripts/cardreader/prepare_o2micro_source.sh
+
+      - name: Validate O2Micro conservative build changes
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          root = Path('output/cardreader/VoodooSDHCI-O2Micro-7120')
+          cpp = (root / 'VoodooSDHC.cpp').read_text()
+          hdr = (root / 'VoodooSDHC.h').read_text()
+          plist = (root / 'Info.plist').read_text()
+
+          power_pos = cpp.find('if (!powerSD(slot))')
+          init_clock_pos = cpp.find('if (!calcClock(slot, 400000))')
+          broken_iolog_literal = re.search(r'IOLog\("[^"\n]*\n', cpp) is not None
+
+          checks = {
+              'PCI ID': '0x71201217' in plist,
+              'PIO': '#define USE_SDMA 0' in cpp,
+              'read-only': '#define READONLY_DRIVER\t1' in cpp,
+              'single-block': '#define USE_MULTIBLOCK\t0' in cpp,
+              '1-bit mode': '//#define WIDE_BUS_MODE\t1' in cpp,
+              'failed-media state': 'kCardInitFailed' in hdr and 'kCardInitFailed' in cpp,
+              'command timeout': 'timeout AFTER CMD' in cpp,
+              'reset timeout': 'reset timeout type=' in cpp,
+              'fixed interrupt wait': 'interrupt timeout mask=' in cpp,
+              'old infinite command wait removed': 'while(this->PCIRegP[slot]->PresentState & ComInhibitCMD);' not in cpp,
+              'waits for command complete': 'if (nis & CmdComplete)' in cpp,
+              'restores command status enables': 'NormalIntStatusEn |= (CmdComplete | ErrorInterrupt)' in cpp,
+              'v1/v2 clock divider': 'UInt16 encodedDiv' in cpp and 'encodedDiv | InternalClockEn | SDClockEn' in cpp,
+              'power before initial clock': 0 <= power_pos < init_clock_pos,
+              'generated IOLog strings stay single-line': not broken_iolog_literal,
+          }
+          for name, ok in checks.items():
+              print(f'{name}: {ok}')
+          if not all(checks.values()):
+              raise SystemExit(1)
+          PY
+
+      - name: Show source delta
+        run: |
+          git --no-pager diff --no-index \
+            cache/cardreader/VoodooSDHCI-upstream \
+            output/cardreader/VoodooSDHCI-O2Micro-7120 || test $? -eq 1
