@@ -593,8 +593,7 @@ bool VoodooSDHC::Reset(UInt8 slot, UInt8 type)
 
 /*
  * SDCommand:  Send a single command to the SDHCI Host controller.  Return true on
- *			   success, false on failure.  Will spin wait indefinitely if device is
- *			   busy.
+ *			   success, false on failure.  Busy and controller waits are bounded.
  *		UInt8 slot:  Which slot the card to send to is in
  *		UInt8 command:  SDHC command as defined in SDHC Physical Interface
  *		UInt16 response:  Response type to expect for command passed in
