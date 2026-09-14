@@ -144,8 +144,8 @@ validate_kernel_release() {
   [[ -f "$kernel" ]] || die "AMD kernel not found: $kernel"
   python3 "$INSPECTOR" --binary "$kernel" --require-arch i386 --quiet \
     || die "AMD kernel does not expose a confirmed i386 Mach-O slice: $kernel"
-  if ! strings "$kernel" | grep -Fq "Darwin Kernel Version $darwin"; then
-    strings "$kernel" | grep -Fq "xnu-$xnu" \
+  if ! LC_ALL=C grep -aFq "Darwin Kernel Version $darwin" "$kernel" 2>/dev/null; then
+    LC_ALL=C grep -aFq "xnu-$xnu" "$kernel" 2>/dev/null \
       || die "Kernel $kernel does not match Darwin $darwin / xnu-$xnu"
   fi
 }
