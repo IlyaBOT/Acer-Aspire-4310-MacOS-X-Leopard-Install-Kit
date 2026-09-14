@@ -112,7 +112,10 @@ rebuild Snow Leopard caches:
 ```bash
 ./install_opencore_snowleopard.sh \
   ./build-o2micro/VoodooSDHC.kext \
-  --disable-sle-conflicts
+  --disable-sle-conflicts \
+  --apply
+
+The installer previews and exits unless `--apply` is supplied.
 ```
 
 The OpenCore entry is limited to:
