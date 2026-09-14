@@ -11,9 +11,16 @@ die() { printf '[cardreader-build] ERROR: %s\n' "$*" >&2; exit 1; }
 
 [[ "$(uname -s)" == "Darwin" ]] || die "must run on Darwin"
 [[ "$(uname -r | cut -d. -f1)" == "10" ]] || die "build this target on Snow Leopard / Darwin 10"
-[[ -d "$PROJECT" ]] || die "missing $PROJECT"
+[[ -d "$SOURCE_DIR" ]] || die "missing source directory: $SOURCE_DIR"
 [[ -f "$SOURCE_DIR/VoodooSDHC.cpp" ]] || die "missing VoodooSDHC.cpp"
 [[ -f "$SOURCE_DIR/Info.plist" ]] || die "missing Info.plist"
+[[ -f "$PROJECT/project.pbxproj" ]] || {
+  printf '[cardreader-build] prepared tree is missing the Xcode project:\n' >&2
+  printf '  %s\n' "$PROJECT/project.pbxproj" >&2
+  printf '[cardreader-build] top-level source contents:\n' >&2
+  ls -la "$SOURCE_DIR" >&2 || true
+  die "rerun scripts/cardreader/prepare_o2micro_source.sh from the repository root"
+}
 
 if command -v xcodebuild >/dev/null 2>&1; then
   XCODEBUILD="$(command -v xcodebuild)"
@@ -28,6 +35,7 @@ fi
 rm -rf "$BUILD_DIR"
 mkdir -p "$BUILD_DIR"
 
+log "project: $PROJECT"
 log "building i386 KEXT with Xcode 3.2 toolchain"
 "$XCODEBUILD" \
   -project "$PROJECT" \
