@@ -7,20 +7,18 @@ OUT_ROOT="$ROOT_DIR/downloads/amd-kernels"
 CACHE_ENV="$ROOT_DIR/cache/amd-kernels.env"
 INSPECTOR="$SCRIPT_DIR/inspect_artifact.py"
 
-# User-maintained mirror containing several historical Snow Leopard kernels.
-# The downloader treats this as the primary source, enumerates the directory
-# index when possible, and still validates the extracted Mach-O before use.
 MIRROR_BASE_URL="https://ibifs.ddns.net/%D0%9F%D1%80%D0%BE%D1%87%D0%B5%D0%B5/%D1%8F%D0%B1%D0%BB%D0%BE%D1%87%D0%BA%D0%B8/Legacy%20Kernal%20hackintosh/"
 
 MODE="all"
 FORCE=0
+DEBUG=0
 
 usage() {
   cat <<'USAGE'
 Download and extract historical AMD Snow Leopard legacy kernels.
 
 Usage:
-  ./scripts/download_amd_snowleopard_kernels.sh [--all|--1063|--1068] [--force]
+  ./scripts/download_amd_snowleopard_kernels.sh [--all|--1063|--1068] [--force] [--debug]
 
 Outputs:
   downloads/amd-kernels/10.6.3/legacy_kernel
@@ -30,23 +28,20 @@ Outputs:
 Primary source:
   https://ibifs.ddns.net/.../Legacy Kernal hackintosh/
 
-The mirror contains several historical kernel variants. The script enumerates the
-HTTP directory listing when available, ranks filenames matching the requested
-Snow Leopard/Darwin version, downloads ZIP candidates, and accepts a kernel only
-when it is an i386 Mach-O advertising the expected Darwin or XNU version.
+The downloader enumerates the mirror directory when possible and tries every
+matching archive candidate. It does not trust filenames: an accepted kernel must
+be a Mach-O containing an i386 slice and must advertise the expected Darwin/XNU
+version. Both raw-kernel ZIPs and historical Apple .pkg layouts are supported.
 
-Known historical nawcom URLs and Internet Archive captures remain as emergency
-fallbacks when the mirror is unavailable.
-
-The project does not ship these kernels. Every downloaded archive and extracted
-kernel gets a local SHA-256 manifest. There are no project-maintained trusted
-reference hashes for these historical binaries, so version and architecture are
-also verified from the Mach-O/string metadata before use.
+--debug prints archive/package extraction details and all Mach-O kernel candidates
+that were considered. This is useful on Linux Live systems with incomplete xar/
+libarchive/cpio support.
 USAGE
 }
 
 log() { printf '[amd-kernel] %s\n' "$*"; }
 warn() { printf '[amd-kernel] WARNING: %s\n' "$*" >&2; }
+debug() { [[ $DEBUG -eq 1 ]] && printf '[amd-kernel] DEBUG: %s\n' "$*" >&2 || true; }
 die() { printf '[amd-kernel] ERROR: %s\n' "$*" >&2; exit 1; }
 have() { command -v "$1" >/dev/null 2>&1; }
 
@@ -56,13 +51,14 @@ while (($#)); do
     --1063) MODE=1063 ;;
     --1068) MODE=1068 ;;
     --force) FORCE=1 ;;
+    --debug) DEBUG=1 ;;
     -h|--help) usage; exit 0 ;;
     *) die "Unknown argument: $1" ;;
   esac
   shift
 done
 
-for cmd in curl python3 unzip file strings sha256sum find awk sed grep; do
+for cmd in curl python3 unzip file strings sha256sum find sed grep; do
   have "$cmd" || die "Missing required command: $cmd"
 done
 [[ -f "$INSPECTOR" ]] || die "Missing inspector: $INSPECTOR"
@@ -77,7 +73,6 @@ wayback_capture_url() {
     --data-urlencode 'output=json' \
     --data-urlencode 'fl=timestamp,original,statuscode,mimetype' \
     --data-urlencode 'filter=statuscode:200' \
-    --data-urlencode 'filter=mimetype:application/zip' \
     --data-urlencode 'filter=collapse:digest' \
     --data-urlencode 'limit=-1' 2>/dev/null || true)"
   [[ -n "$response" ]] || return 1
@@ -89,16 +84,14 @@ except Exception:
     raise SystemExit(1)
 if not isinstance(rows,list) or len(rows) < 2:
     raise SystemExit(1)
-row=rows[-1]
-if len(row) < 2:
-    raise SystemExit(1)
-print(f"https://web.archive.org/web/{row[0]}id_/{row[1]}")
+for row in reversed(rows[1:]):
+    if len(row) >= 2:
+        print(f"https://web.archive.org/web/{row[0]}id_/{row[1]}")
+        raise SystemExit(0)
+raise SystemExit(1)
 PY
 }
 
-# Enumerate ZIP files from the user's mirror and rank likely matches first.
-# This deliberately does not trust filenames: final acceptance is based on the
-# extracted Mach-O architecture and Darwin/XNU strings.
 server_catalog_urls() {
   local osver="$1" darwin="$2" index_file
   index_file="$(mktemp /tmp/amd-kernel-index.XXXXXX)"
@@ -116,55 +109,40 @@ from urllib.parse import urljoin, urlsplit, unquote, quote, urlunsplit
 import sys
 
 base, osver, darwin, path = sys.argv[1:]
-
 class P(HTMLParser):
     def __init__(self):
-        super().__init__()
-        self.hrefs=[]
+        super().__init__(); self.hrefs=[]
     def handle_starttag(self, tag, attrs):
-        if tag.lower() != 'a':
-            return
+        if tag.lower() != 'a': return
         for k,v in attrs:
-            if k.lower() == 'href' and v:
-                self.hrefs.append(v)
+            if k.lower() == 'href' and v: self.hrefs.append(v)
 
 p=P()
 with open(path, 'r', encoding='utf-8', errors='ignore') as f:
     p.feed(f.read())
-
-want_tokens = {osver.lower(), darwin.lower()}
-rows=[]
-seen=set()
+rows=[]; seen=set()
 for href in p.hrefs:
     full=urljoin(base, href)
     parts=urlsplit(full)
     name=unquote(PurePosixPath(parts.path).name)
     low=name.lower()
-    if not low.endswith('.zip'):
-        continue
-    if not any(tok in low for tok in want_tokens):
-        continue
-    if not any(k in low for k in ('kernel', 'kernal', 'nawcom', 'anv', 'qoopz')):
-        continue
-
-    # Re-encode non-ASCII/spaces while preserving URL separators and percent escapes.
+    if not low.endswith('.zip'): continue
+    if osver.lower() not in low and darwin.lower() not in low: continue
+    if not any(k in low for k in ('kernel','kernal','nawcom','anv','qoopz')): continue
     enc_path=quote(unquote(parts.path), safe="/%:@-._~!$&'()*+,;=")
-    full=urlunsplit((parts.scheme, parts.netloc, enc_path, parts.query, parts.fragment))
-    if full in seen:
-        continue
+    full=urlunsplit((parts.scheme,parts.netloc,enc_path,parts.query,parts.fragment))
+    if full in seen: continue
     seen.add(full)
-
     score=0
-    if darwin in low: score += 100
-    if osver in low: score += 80
+    if darwin.lower() in low: score += 100
+    if osver.lower() in low: score += 80
     if 'legacy_kernel' in low: score += 60
     if '.pkg.zip' in low: score += 40
     if 'nawcom' in low or 'qoopz' in low: score += 20
     if osver == '10.6.8' and 'v2' in low: score += 100
-    if 'sinetek' in low: score -= 30  # x86_64 experiments are not first choice here
-    rows.append((score, name, full))
-
-for _,_,url in sorted(rows, key=lambda x:(-x[0], x[1].lower())):
+    if 'sinetek' in low: score -= 30
+    rows.append((score,name,full))
+for _,_,url in sorted(rows,key=lambda x:(-x[0],x[1].lower())):
     print(url)
 PY
   rm -f "$index_file"
@@ -183,24 +161,19 @@ download_one_zip() {
   local destination="$1" url="$2" tmp archive_url
   tmp="${destination}.part"
   rm -f "$tmp"
-
   log "Trying $url"
-  if curl -fL --retry 2 --connect-timeout 20 --max-time 600 -o "$tmp" "$url" 2>/dev/null && valid_zip "$tmp"; then
+  if curl -fL --retry 2 --connect-timeout 20 --max-time 900 -o "$tmp" "$url" 2>/dev/null && valid_zip "$tmp"; then
     mv -f "$tmp" "$destination"
     printf '%s\n' "$url" > "${destination}.source-url"
+    debug "Downloaded $(du -h "$destination" | awk '{print $1}') from $url"
     return 0
   fi
   rm -f "$tmp"
-
-  # Do not ask Wayback to archive/resolve files on the user's live mirror.
-  if [[ "$url" == "$MIRROR_BASE_URL"* ]]; then
-    return 1
-  fi
-
+  [[ "$url" == "$MIRROR_BASE_URL"* ]] && return 1
   archive_url="$(wayback_capture_url "$url" || true)"
   if [[ -n "$archive_url" ]]; then
     log "Trying archived capture: $archive_url"
-    if curl -fL --retry 2 --connect-timeout 20 --max-time 600 -o "$tmp" "$archive_url" 2>/dev/null && valid_zip "$tmp"; then
+    if curl -fL --retry 2 --connect-timeout 20 --max-time 900 -o "$tmp" "$archive_url" 2>/dev/null && valid_zip "$tmp"; then
       mv -f "$tmp" "$destination"
       printf '%s\n' "$archive_url" > "${destination}.source-url"
       return 0
@@ -214,28 +187,33 @@ extract_payload() {
   local payload="$1" out="$2"
   mkdir -p "$out"
   if have bsdtar && bsdtar -xf "$payload" -C "$out" >/dev/null 2>&1; then
+    debug "Payload extracted with bsdtar: $payload"
     return 0
   fi
   if have cpio; then
     if gzip -dc "$payload" 2>/dev/null | (cd "$out" && cpio -idm --quiet) 2>/dev/null; then return 0; fi
     if bzip2 -dc "$payload" 2>/dev/null | (cd "$out" && cpio -idm --quiet) 2>/dev/null; then return 0; fi
     if xz -dc "$payload" 2>/dev/null | (cd "$out" && cpio -idm --quiet) 2>/dev/null; then return 0; fi
+    if (cd "$out" && cpio -idm --quiet < "$payload") 2>/dev/null; then return 0; fi
   fi
+  debug "Could not extract payload: $payload"
   return 1
 }
 
 expand_pkg_tree() {
   local pkg="$1" out="$2" depth="${3:-0}" child payload idx=0
-  (( depth <= 4 )) || return 0
+  (( depth <= 5 )) || return 0
   mkdir -p "$out"
+  debug "Expanding package: $pkg"
 
   if [[ -d "$pkg" ]]; then
     cp -a "$pkg"/. "$out"/
   elif have xar && xar -tf "$pkg" >/dev/null 2>&1; then
-    (cd "$out" && xar -xf "$pkg")
+    (cd "$out" && xar -xf "$pkg") || return 1
   elif have bsdtar && bsdtar -tf "$pkg" >/dev/null 2>&1; then
-    bsdtar -xf "$pkg" -C "$out"
+    bsdtar -xf "$pkg" -C "$out" || return 1
   else
+    debug "No working xar/bsdtar extractor for package: $pkg"
     return 1
   fi
 
@@ -246,27 +224,62 @@ expand_pkg_tree() {
 
   while IFS= read -r -d '' child; do
     [[ "$child" != "$pkg" ]] || continue
-    expand_pkg_tree "$child" "$out/nested-$depth-$(basename "$child")" $((depth+1)) || true
+    expand_pkg_tree "$child" "$out/nested-$depth-$idx" $((depth+1)) || true
+    idx=$((idx+1))
   done < <(find "$out" -mindepth 1 \( -type f -o -type d \) -name '*.pkg' -print0 2>/dev/null)
 }
 
-find_kernel_candidate() {
-  local root="$1" candidate
-  while IFS= read -r -d '' candidate; do
-    if file "$candidate" | grep -qi 'Mach-O'; then
-      printf '%s\n' "$candidate"
-      return 0
-    fi
-  done < <(find "$root" -type f \( -name legacy_kernel -o -name mach_kernel -o -name kernel -o -name '*kernel*' \) -print0 2>/dev/null)
+kernel_version_matches() {
+  local kernel="$1" darwin="$2" xnu="$3"
+  strings "$kernel" | grep -Fq "Darwin Kernel Version $darwin" && return 0
+  strings "$kernel" | grep -Fq "xnu-$xnu" && return 0
+  strings "$kernel" | grep -Fq "$xnu" && return 0
   return 1
+}
+
+kernel_arch_matches() {
+  local kernel="$1"
+  python3 "$INSPECTOR" --binary "$kernel" --require-arch i386 --quiet >/dev/null 2>&1
 }
 
 kernel_matches() {
   local kernel="$1" darwin="$2" xnu="$3"
-  python3 "$INSPECTOR" --binary "$kernel" --require-arch i386 --quiet >/dev/null 2>&1 \
-    || return 1
-  strings "$kernel" | grep -Fq "Darwin Kernel Version $darwin" && return 0
-  strings "$kernel" | grep -Fq "xnu-$xnu" && return 0
+  kernel_arch_matches "$kernel" || return 1
+  kernel_version_matches "$kernel" "$darwin" "$xnu"
+}
+
+candidate_summary() {
+  local candidate="$1"
+  local f arches versions
+  f="$(file -b "$candidate" 2>/dev/null || true)"
+  arches="$(python3 "$INSPECTOR" --binary "$candidate" 2>/dev/null | python3 -c 'import json,sys; print(",".join(json.load(sys.stdin).get("architectures",[])))' 2>/dev/null || true)"
+  versions="$(strings "$candidate" 2>/dev/null | grep -E 'Darwin Kernel Version|xnu-[0-9]' | head -n 3 | tr '\n' ';' || true)"
+  debug "Candidate: $candidate | file=$f | arches=${arches:-unknown} | versions=${versions:-none}"
+}
+
+find_matching_kernel() {
+  local root="$1" darwin="$2" xnu="$3" candidate
+
+  # First inspect names that are normally used for XNU kernels.
+  while IFS= read -r -d '' candidate; do
+    file "$candidate" | grep -qi 'Mach-O' || continue
+    candidate_summary "$candidate"
+    if kernel_matches "$candidate" "$darwin" "$xnu"; then
+      printf '%s\n' "$candidate"
+      return 0
+    fi
+  done < <(find "$root" -type f \( -iname 'legacy_kernel*' -o -iname 'mach_kernel*' -o -iname 'kernel*' -o -iname '*kernel*' \) -print0 2>/dev/null)
+
+  # Historical packages occasionally rename the binary. Search all reasonably
+  # large Mach-O files as a second pass; version validation prevents false hits.
+  while IFS= read -r -d '' candidate; do
+    file "$candidate" | grep -qi 'Mach-O' || continue
+    candidate_summary "$candidate"
+    if kernel_matches "$candidate" "$darwin" "$xnu"; then
+      printf '%s\n' "$candidate"
+      return 0
+    fi
+  done < <(find "$root" -type f -size +1M -print0 2>/dev/null)
   return 1
 }
 
@@ -278,28 +291,36 @@ validate_kernel() {
 
 extract_kernel_from_zip() {
   local archive="$1" darwin="$2" xnu="$3" work="$4"
-  local pkg kernel
+  local pkg kernel found_pkg=0 expanded_pkg=0
   mkdir -p "$work/unzip"
   unzip -q "$archive" -d "$work/unzip" || return 1
+  if [[ $DEBUG -eq 1 ]]; then
+    debug "Archive listing for $(basename "$archive")"
+    unzip -l "$archive" >&2 || true
+  fi
 
-  # Some archives contain the raw legacy_kernel directly rather than a .pkg.
-  kernel="$(find_kernel_candidate "$work/unzip" || true)"
-  if [[ -n "$kernel" ]] && kernel_matches "$kernel" "$darwin" "$xnu"; then
+  kernel="$(find_matching_kernel "$work/unzip" "$darwin" "$xnu" || true)"
+  if [[ -n "$kernel" ]]; then
     printf '%s\n' "$kernel"
     return 0
   fi
 
   while IFS= read -r -d '' pkg; do
+    found_pkg=1
     rm -rf "$work/pkg"
     if expand_pkg_tree "$pkg" "$work/pkg"; then
-      kernel="$(find_kernel_candidate "$work/pkg" || true)"
-      if [[ -n "$kernel" ]] && kernel_matches "$kernel" "$darwin" "$xnu"; then
+      expanded_pkg=1
+      kernel="$(find_matching_kernel "$work/pkg" "$darwin" "$xnu" || true)"
+      if [[ -n "$kernel" ]]; then
         printf '%s\n' "$kernel"
         return 0
       fi
     fi
   done < <(find "$work/unzip" \( -type f -o -type d \) -name '*.pkg' -print0 2>/dev/null)
 
+  if [[ $found_pkg -eq 1 && $expanded_pkg -eq 0 ]]; then
+    warn "The archive contains Apple .pkg data, but it could not be expanded. Install 'libarchive-tools' (bsdtar) and 'cpio', or xar, then retry."
+  fi
   return 1
 }
 
@@ -307,6 +328,7 @@ install_kernel_release() {
   local osver="$1" darwin="$2" xnu="$3" archive_name="$4"; shift 4
   local dir="$OUT_ROOT/$osver" archive="$OUT_ROOT/$osver/$archive_name"
   local work kernel source_url url accepted=0
+  local -A seen=()
   mkdir -p "$dir"
 
   if [[ $FORCE -eq 0 && -s "$dir/legacy_kernel" ]]; then
@@ -319,8 +341,11 @@ install_kernel_release() {
 
   for url in "$@"; do
     [[ -n "$url" ]] || continue
+    [[ -z "${seen[$url]:-}" ]] || { debug "Skipping duplicate URL: $url"; continue; }
+    seen[$url]=1
     rm -f "$archive" "${archive}.source-url"
     if ! download_one_zip "$archive" "$url"; then
+      debug "Download failed or was not a valid ZIP: $url"
       continue
     fi
 
@@ -329,17 +354,18 @@ install_kernel_release() {
     if [[ -n "$kernel" ]]; then
       cp -f "$kernel" "$dir/legacy_kernel"
       chmod 0644 "$dir/legacy_kernel"
+      validate_kernel "$dir/legacy_kernel" "$darwin" "$xnu"
       accepted=1
       rm -rf -- "$work"
       break
     fi
 
-    warn "Rejected candidate: $(cat "${archive}.source-url" 2>/dev/null || printf '%s' "$url") (no matching i386 Darwin $darwin / xnu-$xnu kernel)"
+    warn "Rejected candidate: $(cat "${archive}.source-url" 2>/dev/null || printf '%s' "$url") (no matching i386 Darwin $darwin / xnu-$xnu kernel was found after extraction)"
     rm -rf -- "$work"
   done
 
   [[ $accepted -eq 1 ]] \
-    || die "Could not find a valid i386 Darwin $darwin / xnu-$xnu kernel for OS X $osver"
+    || die "Could not find a valid i386 Darwin $darwin / xnu-$xnu kernel for OS X $osver. Re-run with --debug; if a .pkg archive is involved, ensure libarchive-tools/bsdtar and cpio are installed."
 
   source_url="$(cat "${archive}.source-url" 2>/dev/null || printf UNKNOWN)"
   {
