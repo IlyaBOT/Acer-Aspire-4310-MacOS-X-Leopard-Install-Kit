@@ -7,6 +7,11 @@ OUT_ROOT="$ROOT_DIR/downloads/amd-kernels"
 CACHE_ENV="$ROOT_DIR/cache/amd-kernels.env"
 INSPECTOR="$SCRIPT_DIR/inspect_artifact.py"
 
+# User-maintained mirror containing several historical Snow Leopard kernels.
+# The downloader treats this as the primary source, enumerates the directory
+# index when possible, and still validates the extracted Mach-O before use.
+MIRROR_BASE_URL="https://ibifs.ddns.net/%D0%9F%D1%80%D0%BE%D1%87%D0%B5%D0%B5/%D1%8F%D0%B1%D0%BB%D0%BE%D1%87%D0%BA%D0%B8/Legacy%20Kernal%20hackintosh/"
+
 MODE="all"
 FORCE=0
 
@@ -22,9 +27,16 @@ Outputs:
   downloads/amd-kernels/10.6.8/legacy_kernel
   cache/amd-kernels.env
 
-Sources are historical nawcom/qoopz release URLs. Because the original hosts are
-old and may be offline, the downloader tries the original URL first and then asks
-the Internet Archive CDX API for an archived copy of the same URL.
+Primary source:
+  https://ibifs.ddns.net/.../Legacy Kernal hackintosh/
+
+The mirror contains several historical kernel variants. The script enumerates the
+HTTP directory listing when available, ranks filenames matching the requested
+Snow Leopard/Darwin version, downloads ZIP candidates, and accepts a kernel only
+when it is an i386 Mach-O advertising the expected Darwin or XNU version.
+
+Known historical nawcom URLs and Internet Archive captures remain as emergency
+fallbacks when the mirror is unavailable.
 
 The project does not ship these kernels. Every downloaded archive and extracted
 kernel gets a local SHA-256 manifest. There are no project-maintained trusted
@@ -84,6 +96,80 @@ print(f"https://web.archive.org/web/{row[0]}id_/{row[1]}")
 PY
 }
 
+# Enumerate ZIP files from the user's mirror and rank likely matches first.
+# This deliberately does not trust filenames: final acceptance is based on the
+# extracted Mach-O architecture and Darwin/XNU strings.
+server_catalog_urls() {
+  local osver="$1" darwin="$2" index_file
+  index_file="$(mktemp /tmp/amd-kernel-index.XXXXXX)"
+  if ! curl -fsSL --retry 2 --connect-timeout 20 --max-time 60 \
+      -o "$index_file" "$MIRROR_BASE_URL" 2>/dev/null; then
+    rm -f "$index_file"
+    warn "Could not enumerate primary mirror directory: $MIRROR_BASE_URL"
+    return 0
+  fi
+
+  python3 - "$MIRROR_BASE_URL" "$osver" "$darwin" "$index_file" <<'PY'
+from html.parser import HTMLParser
+from pathlib import PurePosixPath
+from urllib.parse import urljoin, urlsplit, unquote, quote, urlunsplit
+import sys
+
+base, osver, darwin, path = sys.argv[1:]
+
+class P(HTMLParser):
+    def __init__(self):
+        super().__init__()
+        self.hrefs=[]
+    def handle_starttag(self, tag, attrs):
+        if tag.lower() != 'a':
+            return
+        for k,v in attrs:
+            if k.lower() == 'href' and v:
+                self.hrefs.append(v)
+
+p=P()
+with open(path, 'r', encoding='utf-8', errors='ignore') as f:
+    p.feed(f.read())
+
+want_tokens = {osver.lower(), darwin.lower()}
+rows=[]
+seen=set()
+for href in p.hrefs:
+    full=urljoin(base, href)
+    parts=urlsplit(full)
+    name=unquote(PurePosixPath(parts.path).name)
+    low=name.lower()
+    if not low.endswith('.zip'):
+        continue
+    if not any(tok in low for tok in want_tokens):
+        continue
+    if not any(k in low for k in ('kernel', 'kernal', 'nawcom', 'anv', 'qoopz')):
+        continue
+
+    # Re-encode non-ASCII/spaces while preserving URL separators and percent escapes.
+    enc_path=quote(unquote(parts.path), safe="/%:@-._~!$&'()*+,;=")
+    full=urlunsplit((parts.scheme, parts.netloc, enc_path, parts.query, parts.fragment))
+    if full in seen:
+        continue
+    seen.add(full)
+
+    score=0
+    if darwin in low: score += 100
+    if osver in low: score += 80
+    if 'legacy_kernel' in low: score += 60
+    if '.pkg.zip' in low: score += 40
+    if 'nawcom' in low or 'qoopz' in low: score += 20
+    if osver == '10.6.8' and 'v2' in low: score += 100
+    if 'sinetek' in low: score -= 30  # x86_64 experiments are not first choice here
+    rows.append((score, name, full))
+
+for _,_,url in sorted(rows, key=lambda x:(-x[0], x[1].lower())):
+    print(url)
+PY
+  rm -f "$index_file"
+}
+
 valid_zip() {
   local path="$1"
   [[ -s "$path" ]] || return 1
@@ -93,30 +179,34 @@ raise SystemExit(0 if zipfile.is_zipfile(sys.argv[1]) else 1)
 PY
 }
 
-download_archive() {
-  local destination="$1"; shift
-  local url archive_url tmp
+download_one_zip() {
+  local destination="$1" url="$2" tmp archive_url
   tmp="${destination}.part"
   rm -f "$tmp"
-  for url in "$@"; do
-    log "Trying $url"
-    if curl -fL --retry 2 --connect-timeout 20 --max-time 300 -o "$tmp" "$url" 2>/dev/null && valid_zip "$tmp"; then
+
+  log "Trying $url"
+  if curl -fL --retry 2 --connect-timeout 20 --max-time 600 -o "$tmp" "$url" 2>/dev/null && valid_zip "$tmp"; then
+    mv -f "$tmp" "$destination"
+    printf '%s\n' "$url" > "${destination}.source-url"
+    return 0
+  fi
+  rm -f "$tmp"
+
+  # Do not ask Wayback to archive/resolve files on the user's live mirror.
+  if [[ "$url" == "$MIRROR_BASE_URL"* ]]; then
+    return 1
+  fi
+
+  archive_url="$(wayback_capture_url "$url" || true)"
+  if [[ -n "$archive_url" ]]; then
+    log "Trying archived capture: $archive_url"
+    if curl -fL --retry 2 --connect-timeout 20 --max-time 600 -o "$tmp" "$archive_url" 2>/dev/null && valid_zip "$tmp"; then
       mv -f "$tmp" "$destination"
-      printf '%s\n' "$url" > "${destination}.source-url"
+      printf '%s\n' "$archive_url" > "${destination}.source-url"
       return 0
     fi
     rm -f "$tmp"
-    archive_url="$(wayback_capture_url "$url" || true)"
-    if [[ -n "$archive_url" ]]; then
-      log "Trying archived capture: $archive_url"
-      if curl -fL --retry 2 --connect-timeout 20 --max-time 600 -o "$tmp" "$archive_url" 2>/dev/null && valid_zip "$tmp"; then
-        mv -f "$tmp" "$destination"
-        printf '%s\n' "$archive_url" > "${destination}.source-url"
-        return 0
-      fi
-      rm -f "$tmp"
-    fi
-  done
+  fi
   return 1
 }
 
@@ -167,25 +257,56 @@ find_kernel_candidate() {
       printf '%s\n' "$candidate"
       return 0
     fi
-  done < <(find "$root" -type f \( -name legacy_kernel -o -name mach_kernel -o -name kernel \) -print0 2>/dev/null)
+  done < <(find "$root" -type f \( -name legacy_kernel -o -name mach_kernel -o -name kernel -o -name '*kernel*' \) -print0 2>/dev/null)
+  return 1
+}
+
+kernel_matches() {
+  local kernel="$1" darwin="$2" xnu="$3"
+  python3 "$INSPECTOR" --binary "$kernel" --require-arch i386 --quiet >/dev/null 2>&1 \
+    || return 1
+  strings "$kernel" | grep -Fq "Darwin Kernel Version $darwin" && return 0
+  strings "$kernel" | grep -Fq "xnu-$xnu" && return 0
   return 1
 }
 
 validate_kernel() {
   local kernel="$1" darwin="$2" xnu="$3"
-  python3 "$INSPECTOR" --binary "$kernel" --require-arch i386 --quiet \
-    || die "Kernel is not a verified i386 Mach-O: $kernel"
-  if ! strings "$kernel" | grep -Fq "Darwin Kernel Version $darwin"; then
-    if ! strings "$kernel" | grep -Fq "xnu-$xnu"; then
-      die "Kernel does not advertise Darwin $darwin or xnu-$xnu: $kernel"
-    fi
+  kernel_matches "$kernel" "$darwin" "$xnu" \
+    || die "Kernel is not a verified i386 Darwin $darwin / xnu-$xnu Mach-O: $kernel"
+}
+
+extract_kernel_from_zip() {
+  local archive="$1" darwin="$2" xnu="$3" work="$4"
+  local pkg kernel
+  mkdir -p "$work/unzip"
+  unzip -q "$archive" -d "$work/unzip" || return 1
+
+  # Some archives contain the raw legacy_kernel directly rather than a .pkg.
+  kernel="$(find_kernel_candidate "$work/unzip" || true)"
+  if [[ -n "$kernel" ]] && kernel_matches "$kernel" "$darwin" "$xnu"; then
+    printf '%s\n' "$kernel"
+    return 0
   fi
+
+  while IFS= read -r -d '' pkg; do
+    rm -rf "$work/pkg"
+    if expand_pkg_tree "$pkg" "$work/pkg"; then
+      kernel="$(find_kernel_candidate "$work/pkg" || true)"
+      if [[ -n "$kernel" ]] && kernel_matches "$kernel" "$darwin" "$xnu"; then
+        printf '%s\n' "$kernel"
+        return 0
+      fi
+    fi
+  done < <(find "$work/unzip" \( -type f -o -type d \) -name '*.pkg' -print0 2>/dev/null)
+
+  return 1
 }
 
 install_kernel_release() {
   local osver="$1" darwin="$2" xnu="$3" archive_name="$4"; shift 4
   local dir="$OUT_ROOT/$osver" archive="$OUT_ROOT/$osver/$archive_name"
-  local work pkg kernel source_url
+  local work kernel source_url url accepted=0
   mkdir -p "$dir"
 
   if [[ $FORCE -eq 0 && -s "$dir/legacy_kernel" ]]; then
@@ -195,53 +316,70 @@ install_kernel_release() {
   fi
 
   rm -f "$dir/legacy_kernel" "$dir/SHA256SUMS.txt"
-  if [[ $FORCE -eq 1 || ! -s "$archive" ]]; then
+
+  for url in "$@"; do
+    [[ -n "$url" ]] || continue
     rm -f "$archive" "${archive}.source-url"
-    download_archive "$archive" "$@" \
-      || die "Could not download $archive_name from the historical source or its Internet Archive captures"
-  fi
-  valid_zip "$archive" || die "Downloaded file is not a ZIP archive: $archive"
+    if ! download_one_zip "$archive" "$url"; then
+      continue
+    fi
 
-  work="$(mktemp -d /tmp/amd-snow-kernel.XXXXXX)"
-  trap 'rm -rf -- "$work"' RETURN
-  unzip -q "$archive" -d "$work/unzip"
+    work="$(mktemp -d /tmp/amd-snow-kernel.XXXXXX)"
+    kernel="$(extract_kernel_from_zip "$archive" "$darwin" "$xnu" "$work" || true)"
+    if [[ -n "$kernel" ]]; then
+      cp -f "$kernel" "$dir/legacy_kernel"
+      chmod 0644 "$dir/legacy_kernel"
+      accepted=1
+      rm -rf -- "$work"
+      break
+    fi
 
-  pkg="$(find "$work/unzip" \( -type f -o -type d \) -name '*.pkg' -print -quit 2>/dev/null || true)"
-  [[ -n "$pkg" ]] || die "No .pkg found inside $archive"
-  expand_pkg_tree "$pkg" "$work/pkg" || die "Could not expand package $pkg; install libarchive-tools (bsdtar) or xar"
-  kernel="$(find_kernel_candidate "$work/pkg" || true)"
-  [[ -n "$kernel" ]] || die "Could not locate legacy_kernel inside $archive; install libarchive-tools/xar/cpio and retry"
-  validate_kernel "$kernel" "$darwin" "$xnu"
+    warn "Rejected candidate: $(cat "${archive}.source-url" 2>/dev/null || printf '%s' "$url") (no matching i386 Darwin $darwin / xnu-$xnu kernel)"
+    rm -rf -- "$work"
+  done
 
-  cp -f "$kernel" "$dir/legacy_kernel"
-  chmod 0644 "$dir/legacy_kernel"
+  [[ $accepted -eq 1 ]] \
+    || die "Could not find a valid i386 Darwin $darwin / xnu-$xnu kernel for OS X $osver"
+
   source_url="$(cat "${archive}.source-url" 2>/dev/null || printf UNKNOWN)"
   {
     printf 'OS_X_VERSION=%s\n' "$osver"
     printf 'DARWIN_VERSION=%s\n' "$darwin"
     printf 'XNU_VERSION=%s\n' "$xnu"
     printf 'SOURCE_URL=%s\n' "$source_url"
+    printf 'PRIMARY_MIRROR=%s\n' "$MIRROR_BASE_URL"
     printf 'NOTE=Historical third-party AMD kernel; locally verified for i386 and version strings, not authenticated by a project-maintained reference hash.\n'
   } > "$dir/SOURCE.txt"
   (
     cd "$dir"
     sha256sum "$archive_name" legacy_kernel > SHA256SUMS.txt
   )
-  rm -rf -- "$work"
-  trap - RETURN
   log "Prepared OS X $osver AMD kernel: $dir/legacy_kernel"
+  log "Accepted source: $source_url"
 }
 
 prepare_1063() {
+  local -a mirror=()
+  mapfile -t mirror < <(server_catalog_urls "10.6.3" "10.3.0")
   install_kernel_release \
     "10.6.3" "10.3.0" "1504.3.12" "legacy_kernel-10.3.0.pkg.zip" \
+    "${mirror[@]}" \
+    "${MIRROR_BASE_URL}legacy_kernel-10.3.0.pkg.zip" \
+    "${MIRROR_BASE_URL}legacy_kernel-10.3.0.%2810.6.3%29.pkg.zip" \
+    "${MIRROR_BASE_URL}legacy_kernel.10.3.0.%2810.6.3%29.zip" \
     "http://nawcom.com/osx86/files/10.6/Kernels/10.3.0/legacy_kernel-10.3.0.pkg.zip" \
     "http://dl.nawcom.com/Kernels/10.3.0/legacy_kernel-10.3.0.pkg.zip"
 }
 
 prepare_1068() {
+  local -a mirror=()
+  mapfile -t mirror < <(server_catalog_urls "10.6.8" "10.8.0")
   install_kernel_release \
     "10.6.8" "10.8.0" "1504.15.3" "legacy_kernel-10.6.8.v2.pkg.zip" \
+    "${mirror[@]}" \
+    "${MIRROR_BASE_URL}legacy_kernel-10.6.8.v2.pkg.zip" \
+    "${MIRROR_BASE_URL}legacy_kernel-10.8.0.%2810.6.8%29.pkg.zip" \
+    "${MIRROR_BASE_URL}legacy_kernel.10.8.0.%2810.6.8%29.zip" \
     "http://blog.nawcom.com/legacy_kernel-10.6.8.v2.pkg.zip" \
     "http://nawcom.com/osx86/files/10.6/Kernels/10.8.0/legacy_kernel-10.6.8.v2.pkg.zip"
 }
