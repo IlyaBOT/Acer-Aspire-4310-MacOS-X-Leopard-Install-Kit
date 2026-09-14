@@ -81,13 +81,16 @@ printf '%s\n' "$MATCH" | grep -q '0x71201217' || die "built KEXT does not match 
 
 # Snow Leopard's kextutil validates ownership as well as linkage. Validate a
 # disposable root-owned copy so subsequent builds can still clean BUILD_DIR.
+# -n is important here: an older VoodooSDHC build may already be loaded, and a
+# normal kextutil invocation would try to load the new UUID and fail even though
+# the freshly built bundle itself is valid.
 STAGE="/tmp/VoodooSDHC-o2micro-validate.kext"
 sudo rm -rf "$STAGE"
 sudo cp -R "$KEXT" "$STAGE"
 sudo chown -R root:wheel "$STAGE"
 sudo chmod -R 755 "$STAGE"
-log "kextutil validation"
-sudo kextutil -t -v 2 "$STAGE" || die "kextutil validation failed"
+log "kextutil validation (no load)"
+sudo kextutil -n -t -v 2 "$STAGE" || die "kextutil validation failed"
 sudo rm -rf "$STAGE"
 
 log "SUCCESS: $KEXT"
