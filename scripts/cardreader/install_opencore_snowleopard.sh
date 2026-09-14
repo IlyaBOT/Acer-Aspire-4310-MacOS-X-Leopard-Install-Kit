@@ -2,7 +2,7 @@
 set -Eeuo pipefail
 
 KEXT=""
-EFI_DEVICE="${EFI_DEVICE:-disk0s1}"
+EFI_DEVICE="${EFI_DEVICE:-}"
 DISABLE_SLE=0
 APPLY=0
 
@@ -12,8 +12,12 @@ Usage:
   install_opencore_snowleopard.sh /path/to/VoodooSDHC.kext [--efi-device disk0s1] [--disable-sle-conflicts]
 
 The script validates the KEXT and previews the target paths by default. With
---apply it backs up OpenCore config.plist, installs VoodooSDHC.kext into
-EFI/OC/Kexts, and adds/updates an i386 Kernel->Add entry limited to Darwin 10.x.
+--apply it backs up OpenCore config.plist, installs VoodooSDHC.kext into the
+OpenCore EFI, and adds/updates an i386 Kernel->Add entry limited to Darwin 10.x.
+
+By default the installer auto-detects EFI partitions and selects the only one
+containing EFI/OC/config.plist. If more than one OpenCore EFI is found, specify
+the intended partition explicitly with --efi-device.
 
 --disable-sle-conflicts moves IOSDHCIBlockDevice.kext/VoodooSDHC.kext out of
 /System/Library/Extensions and rebuilds Snow Leopard's kernel caches. Use this
@@ -43,6 +47,30 @@ done
 log() { printf '[cardreader-oc] %s\n' "$*"; }
 die() { printf '[cardreader-oc] ERROR: %s\n' "$*" >&2; exit 1; }
 
+disk_mount_point() {
+  diskutil info "$1" 2>/dev/null |
+    sed -n 's/^[[:space:]]*Mount Point:[[:space:]]*//p' |
+    head -1
+}
+
+disk_identifier_for_path() {
+  diskutil info "$1" 2>/dev/null |
+    sed -n 's/^[[:space:]]*Device Identifier:[[:space:]]*//p' |
+    head -1
+}
+
+mount_efi_device() {
+  local dev="$1" mp
+  mp="$(disk_mount_point "$dev")"
+  if [[ -z "$mp" || "$mp" == "Not mounted" ]]; then
+    log "mounting EFI from $dev"
+    sudo diskutil mount "$dev" >/dev/null || return 1
+    mp="$(disk_mount_point "$dev")"
+  fi
+  [[ -n "$mp" && "$mp" != "Not mounted" ]] || return 1
+  printf '%s\n' "$mp"
+}
+
 [[ -n "$KEXT" ]] || { usage >&2; exit 2; }
 KEXT="$(cd "$(dirname "$KEXT")" && pwd -P)/$(basename "$KEXT")"
 [[ -d "$KEXT" ]] || die "KEXT not found: $KEXT"
@@ -63,23 +91,99 @@ fi
 if [[ "$APPLY" -eq 0 ]]; then
   echo "Preview only; nothing will be changed."
   echo "  source: $KEXT"
-  echo "  EFI device: $EFI_DEVICE"
-  echo "  target: /Volumes/EFI/EFI/OC/Kexts/VoodooSDHC.kext"
-  echo "  config: /Volumes/EFI/EFI/OC/config.plist"
+  if [[ -n "$EFI_DEVICE" ]]; then
+    echo "  EFI device: $EFI_DEVICE"
+  else
+    echo "  EFI device: auto-detect OpenCore EFI"
+  fi
+  echo "  target: <OpenCore EFI>/EFI/OC/Kexts/VoodooSDHC.kext"
+  echo "  config: <OpenCore EFI>/EFI/OC/config.plist"
   echo "Run again with --apply to perform the change."
   exit 0
 fi
 
-if [[ ! -f /Volumes/EFI/EFI/OC/config.plist ]]; then
-  log "mounting EFI from $EFI_DEVICE"
-  sudo diskutil mount "$EFI_DEVICE" >/dev/null
+EFI_ROOT=""
+RESOLVED_DEVICE=""
+
+if [[ -n "$EFI_DEVICE" ]]; then
+  MP="$(mount_efi_device "$EFI_DEVICE")" || die "failed to mount EFI device $EFI_DEVICE"
+  [[ -f "$MP/EFI/OC/config.plist" ]] ||
+    die "$EFI_DEVICE mounted at '$MP' but EFI/OC/config.plist was not found there"
+  EFI_ROOT="$MP/EFI/OC"
+  RESOLVED_DEVICE="$EFI_DEVICE"
+else
+  MATCH_ROOTS=()
+  MATCH_DEVS=()
+
+  add_match() {
+    local root="$1" dev="$2" existing
+    for existing in "${MATCH_ROOTS[@]}"; do
+      [[ "$existing" == "$root" ]] && return 0
+    done
+    MATCH_ROOTS[${#MATCH_ROOTS[@]}]="$root"
+    MATCH_DEVS[${#MATCH_DEVS[@]}]="$dev"
+  }
+
+  # Check already mounted volumes first without assuming the mount name is
+  # literally /Volumes/EFI; macOS may use "EFI 1", "EFI 2", etc.
+  for VOL in /Volumes/*; do
+    [[ -d "$VOL" ]] || continue
+    if [[ -f "$VOL/EFI/OC/config.plist" ]]; then
+      DEV="$(disk_identifier_for_path "$VOL")"
+      add_match "$VOL/EFI/OC" "${DEV:-mounted-volume}"
+    fi
+  done
+
+  # Mount each partition whose GPT/MBR listing identifies it as EFI and look
+  # specifically for an OpenCore config. This avoids hard-coding disk0s1.
+  EFI_CANDIDATES="$(diskutil list | awk '{
+    for (i = 1; i <= NF; i++) {
+      if ($i == "EFI") {
+        print $NF
+        break
+      }
+    }
+  }')"
+
+  for DEV in $EFI_CANDIDATES; do
+    case "$DEV" in
+      disk*s*) ;;
+      *) continue ;;
+    esac
+    MP="$(mount_efi_device "$DEV" 2>/dev/null || true)"
+    [[ -n "$MP" ]] || continue
+    if [[ -f "$MP/EFI/OC/config.plist" ]]; then
+      add_match "$MP/EFI/OC" "$DEV"
+    fi
+  done
+
+  if [[ "${#MATCH_ROOTS[@]}" -eq 0 ]]; then
+    printf '[cardreader-oc] No EFI partition containing EFI/OC/config.plist was found.\n' >&2
+    printf '[cardreader-oc] diskutil list follows:\n' >&2
+    diskutil list >&2 || true
+    die "specify the correct partition with --efi-device diskXsY if OpenCore is on a non-standard partition"
+  fi
+
+  if [[ "${#MATCH_ROOTS[@]}" -gt 1 ]]; then
+    printf '[cardreader-oc] Multiple OpenCore EFI partitions were found:\n' >&2
+    i=0
+    while [[ "$i" -lt "${#MATCH_ROOTS[@]}" ]]; do
+      printf '  %s -> %s\n' "${MATCH_DEVS[$i]}" "${MATCH_ROOTS[$i]}" >&2
+      i=$((i + 1))
+    done
+    die "re-run with --efi-device <partition> to select the EFI used to boot this machine"
+  fi
+
+  EFI_ROOT="${MATCH_ROOTS[0]}"
+  RESOLVED_DEVICE="${MATCH_DEVS[0]}"
 fi
 
-EFI=/Volumes/EFI/EFI/OC
+EFI="$EFI_ROOT"
 CONFIG="$EFI/config.plist"
 KEXTS="$EFI/Kexts"
 [[ -f "$CONFIG" ]] || die "OpenCore config not found: $CONFIG"
 [[ -d "$KEXTS" ]] || die "OpenCore Kexts directory not found: $KEXTS"
+log "OpenCore EFI: $RESOLVED_DEVICE -> $EFI"
 
 STAMP="$(date +%Y%m%d-%H%M%S)"
 BACKUP="$HOME/Desktop/cardreader-opencore-backup-$STAMP"
