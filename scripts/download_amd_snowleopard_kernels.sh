@@ -236,14 +236,16 @@ prepare_1063() {
   install_kernel_release \
     "10.6.3" "10.3.0" "1504.3.12" "legacy_kernel-10.3.0.pkg.zip" \
     "http://nawcom.com/osx86/files/10.6/Kernels/10.3.0/legacy_kernel-10.3.0.pkg.zip" \
-    "http://dl.nawcom.com/Kernels/10.3.0/legacy_kernel-10.3.0.pkg.zip"
+    "http://dl.nawcom.com/Kernels/10.3.0/legacy_kernel-10.3.0.pkg.zip" \
+    "https://ibifs.ddns.net/%D0%9F%D1%80%D0%BE%D0%B3%D1%80%D0%B0%D0%BC%D0%BC%D1%8B/%D0%9F%D1%80%D0%BE%D1%87%D0%B5%D0%B5/Legacy%20Kernal%20hackintosh/legacy_kernel-10.3.0.pkg.zip?dl"
 }
 
 prepare_1068() {
   install_kernel_release \
     "10.6.8" "10.8.0" "1504.15.3" "legacy_kernel-10.6.8.v2.pkg.zip" \
     "http://blog.nawcom.com/legacy_kernel-10.6.8.v2.pkg.zip" \
-    "http://nawcom.com/osx86/files/10.6/Kernels/10.8.0/legacy_kernel-10.6.8.v2.pkg.zip"
+    "http://nawcom.com/osx86/files/10.6/Kernels/10.8.0/legacy_kernel-10.6.8.v2.pkg.zip" \
+    "https://ibifs.ddns.net/%D0%9F%D1%80%D0%BE%D0%B3%D1%80%D0%B0%D0%BC%D0%BC%D1%8B/%D0%9F%D1%80%D0%BE%D1%87%D0%B5%D0%B5/Legacy%20Kernal%20hackintosh/Legacy%20Kernel%2010.6.8.zip?dl"
 }
 
 case "$MODE" in
