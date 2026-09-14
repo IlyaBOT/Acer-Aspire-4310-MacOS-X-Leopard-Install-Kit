@@ -80,9 +80,20 @@ def main() -> int:
         if input_config["KeySupportMode"] != "V1":
             fail(errors, "Aspire 4310 PS/2 input requires KeySupportMode V1")
 
+    # OpenCore documents .contentVisibility as optional. The upstream build
+    # places Disabled beside the bootstrap file, but a hand-staged ESP without
+    # the marker is still valid; it merely allows the bootstrap entry to remain
+    # visible in the picker. Reject a malformed marker, not an absent one.
     visibility = esp_root / "EFI" / "BOOT" / ".contentVisibility"
-    if not visibility.is_file() or visibility.read_bytes() != b"Disabled":
-        fail(errors, "EFI bootstrap must be hidden with .contentVisibility=Disabled")
+    if visibility.is_file():
+        visibility_value = visibility.read_bytes().strip()
+        if visibility_value != b"Disabled":
+            fail(errors, "EFI bootstrap .contentVisibility must contain Disabled when present")
+    else:
+        print(
+            "WARNING: EFI/BOOT/.contentVisibility is absent; OpenCore bootstrap may be visible in the picker",
+            file=sys.stderr,
+        )
 
     for entry in config["Misc"]["Tools"]:
         if entry.get("Enabled") and not (oc_root / "Tools" / entry["Path"]).is_file():
