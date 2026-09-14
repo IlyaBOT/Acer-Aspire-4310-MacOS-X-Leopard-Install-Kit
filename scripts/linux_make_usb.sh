@@ -302,8 +302,17 @@ copy_efi_tree() {
     log "Backed up existing EFI/OpenDuet files to $backup_dir"
   fi
   rm -rf -- "$ESP_MOUNT/EFI"
-  cp -a "$BUILD_ROOT/ESP/EFI" "$ESP_MOUNT/EFI"
-  [[ -f "$BUILD_ROOT/ESP/boot" ]] && cp -a "$BUILD_ROOT/ESP/boot" "$ESP_MOUNT/boot"
+  mkdir -p "$ESP_MOUNT/EFI"
+  # FAT does not support Unix uid/gid/mode metadata. Avoid cp -a here: when
+  # running as root GNU cp tries to restore ownership and aborts with EPERM.
+  # Copy the complete tree (including .contentVisibility/.contentFlavour)
+  # while deliberately discarding metadata FAT cannot represent.
+  cp -R --no-preserve=ownership,mode,timestamps "$BUILD_ROOT/ESP/EFI"/. "$ESP_MOUNT/EFI"/
+  if [[ -f "$BUILD_ROOT/ESP/boot" ]]; then
+    cp --no-preserve=ownership,mode,timestamps "$BUILD_ROOT/ESP/boot" "$ESP_MOUNT/boot"
+  fi
+  [[ -f "$ESP_MOUNT/EFI/OC/config.plist" ]] || die "EFI copy failed: missing EFI/OC/config.plist"
+  [[ -f "$ESP_MOUNT/EFI/BOOT/BOOTIA32.efi" ]] || die "EFI copy failed: missing EFI/BOOT/BOOTIA32.efi"
   sync
   umount "$ESP_MOUNT"
 }
