@@ -35,8 +35,8 @@ git -C "$CACHE_DIR" fetch --quiet origin
 git -C "$CACHE_DIR" checkout --quiet --detach "$UPSTREAM_COMMIT"
 ACTUAL="$(git -C "$CACHE_DIR" rev-parse HEAD)"
 [[ "$ACTUAL" == "$UPSTREAM_COMMIT" ]] || die "expected $UPSTREAM_COMMIT, got $ACTUAL"
-[[ -f "$CACHE_DIR/VoodooSDHC.xcodeproj/project.pbxproj" ]] || \
-  die "pinned upstream checkout is incomplete: VoodooSDHC.xcodeproj/project.pbxproj is missing"
+git -C "$CACHE_DIR" cat-file -e "$UPSTREAM_COMMIT:VoodooSDHC.xcodeproj/project.pbxproj" 2>/dev/null || \
+  die "pinned upstream commit does not contain VoodooSDHC.xcodeproj/project.pbxproj"
 
 case "$OUT_DIR" in
   "$ROOT_DIR"/output/cardreader/*) ;;
