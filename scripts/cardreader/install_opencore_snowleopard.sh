@@ -19,6 +19,10 @@ By default the installer auto-detects EFI partitions and selects the only one
 containing EFI/OC/config.plist. If more than one OpenCore EFI is found, specify
 the intended partition explicitly with --efi-device.
 
+On Snow Leopard, diskutil may fail to mount a perfectly valid FAT EFI system
+partition. In that case the installer falls back to mount_msdos. A read-only
+manual EFI mount is automatically remounted read-write before applying changes.
+
 --disable-sle-conflicts moves IOSDHCIBlockDevice.kext/VoodooSDHC.kext out of
 /System/Library/Extensions and rebuilds Snow Leopard's kernel caches. Use this
 when migrating the current S/L/E test driver to OpenCore injection.
@@ -48,9 +52,16 @@ log() { printf '[cardreader-oc] %s\n' "$*"; }
 die() { printf '[cardreader-oc] ERROR: %s\n' "$*" >&2; exit 1; }
 
 disk_mount_point() {
-  diskutil info "$1" 2>/dev/null |
+  local dev="$1" mp
+  mp="$(diskutil info "$dev" 2>/dev/null |
     sed -n 's/^[[:space:]]*Mount Point:[[:space:]]*//p' |
-    head -1
+    head -1)"
+
+  if [[ -z "$mp" || "$mp" == "Not mounted" ]]; then
+    mp="$(mount | awk -v dev="/dev/$dev" '$1 == dev { print $3; exit }')"
+  fi
+
+  printf '%s\n' "$mp"
 }
 
 disk_identifier_for_path() {
@@ -59,15 +70,54 @@ disk_identifier_for_path() {
     head -1
 }
 
-mount_efi_device() {
-  local dev="$1" mp
-  mp="$(disk_mount_point "$dev")"
-  if [[ -z "$mp" || "$mp" == "Not mounted" ]]; then
-    log "mounting EFI from $dev" >&2
-    sudo diskutil mount "$dev" >/dev/null || return 1
-    mp="$(disk_mount_point "$dev")"
+mount_is_writable() {
+  local mp="$1" probe="$1/.cardreader-write-test.$$"
+  if sudo touch "$probe" 2>/dev/null; then
+    sudo rm -f "$probe" >/dev/null 2>&1 || true
+    return 0
   fi
+  return 1
+}
+
+mount_efi_device() {
+  local dev="$1" mp fallback
+  fallback="/Volumes/CardReader-EFI-$dev"
+  mp="$(disk_mount_point "$dev")"
+
+  if [[ -n "$mp" && "$mp" != "Not mounted" ]]; then
+    if mount_is_writable "$mp"; then
+      printf '%s\n' "$mp"
+      return 0
+    fi
+
+    log "EFI $dev is mounted read-only at '$mp'; remounting read-write" >&2
+    sudo umount "$mp" >/dev/null 2>&1 ||
+      sudo diskutil unmount "$dev" >/dev/null 2>&1 ||
+      return 1
+    mp=""
+  fi
+
+  if [[ -z "$mp" || "$mp" == "Not mounted" ]]; then
+    log "mounting EFI from $dev with diskutil" >&2
+    if sudo diskutil mount "$dev" >/dev/null 2>&1; then
+      mp="$(disk_mount_point "$dev")"
+    fi
+  fi
+
+  if [[ -z "$mp" || "$mp" == "Not mounted" ]]; then
+    log "diskutil mount failed; falling back to mount_msdos for $dev" >&2
+    sudo mkdir -p "$fallback"
+    sudo /sbin/mount_msdos "/dev/$dev" "$fallback" || return 1
+    mp="$fallback"
+  fi
+
   [[ -n "$mp" && "$mp" != "Not mounted" ]] || return 1
+
+  if ! mount_is_writable "$mp"; then
+    log "EFI $dev is not writable at '$mp'" >&2
+    return 1
+  fi
+
   printf '%s\n' "$mp"
 }
 
@@ -125,11 +175,15 @@ else
   }
 
   # Check already mounted volumes first without assuming the mount name is
-  # literally /Volumes/EFI; macOS may use "EFI 1", "EFI 2", etc.
+  # literally /Volumes/EFI; macOS may use "EFI 1", "EFI 2", etc. Read-only
+  # matches are discovered here and remounted read-write below when selected.
   for VOL in /Volumes/*; do
     [[ -d "$VOL" ]] || continue
     if [[ -f "$VOL/EFI/OC/config.plist" ]]; then
       DEV="$(disk_identifier_for_path "$VOL")"
+      if [[ -z "$DEV" ]]; then
+        DEV="$(mount | awk -v mp="$VOL" '$3 == mp { sub("/dev/", "", $1); print $1; exit }')"
+      fi
       add_match "$VOL/EFI/OC" "${DEV:-mounted-volume}"
     fi
   done
@@ -150,7 +204,10 @@ else
       disk*s*) ;;
       *) continue ;;
     esac
-    MP="$(mount_efi_device "$DEV" 2>/dev/null || true)"
+    MP="$(disk_mount_point "$DEV")"
+    if [[ -z "$MP" || "$MP" == "Not mounted" ]]; then
+      MP="$(mount_efi_device "$DEV" 2>/dev/null || true)"
+    fi
     [[ -n "$MP" ]] || continue
     if [[ -f "$MP/EFI/OC/config.plist" ]]; then
       add_match "$MP/EFI/OC" "$DEV"
@@ -174,8 +231,17 @@ else
     die "re-run with --efi-device <partition> to select the EFI used to boot this machine"
   fi
 
-  EFI_ROOT="${MATCH_ROOTS[0]}"
   RESOLVED_DEVICE="${MATCH_DEVS[0]}"
+  case "$RESOLVED_DEVICE" in
+    disk*s*)
+      MP="$(mount_efi_device "$RESOLVED_DEVICE")" || die "failed to mount EFI device $RESOLVED_DEVICE read-write"
+      [[ -f "$MP/EFI/OC/config.plist" ]] || die "OpenCore config disappeared after remounting $RESOLVED_DEVICE"
+      EFI_ROOT="$MP/EFI/OC"
+      ;;
+    *)
+      EFI_ROOT="${MATCH_ROOTS[0]}"
+      ;;
+  esac
 fi
 
 EFI="$EFI_ROOT"
