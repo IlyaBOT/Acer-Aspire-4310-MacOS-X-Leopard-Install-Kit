@@ -16,7 +16,9 @@ def replace_once(path: Path, old: str, new: str, label: str) -> None:
 
 def regex_replace_once(path: Path, pattern: str, replacement: str, label: str) -> None:
     text = path.read_text()
-    new_text, count = re.subn(pattern, replacement, text, count=1, flags=re.S)
+    # Pass the replacement through a callback so re.subn() does not interpret
+    # C/C++ escape sequences such as \\n in generated IOLog string literals.
+    new_text, count = re.subn(pattern, lambda _match: replacement, text, count=1, flags=re.S)
     if count != 1:
         print(f"[o2micro-hardener] ERROR: {label}: expected 1 match, found {count}", file=sys.stderr)
         raise SystemExit(1)
