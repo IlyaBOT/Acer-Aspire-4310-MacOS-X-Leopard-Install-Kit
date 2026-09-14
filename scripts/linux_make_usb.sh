@@ -328,7 +328,7 @@ install_openduet() {
 kernel_version_ok() {
   local path="$1"
   [[ -n "$EXPECTED_KERNEL_VERSION" ]] || return 0
-  strings "$path" 2>/dev/null | grep -Fq "Darwin Kernel Version $EXPECTED_KERNEL_VERSION"
+  LC_ALL=C grep -aFq "Darwin Kernel Version $EXPECTED_KERNEL_VERSION" "$path" 2>/dev/null
 }
 
 verify_target() {
