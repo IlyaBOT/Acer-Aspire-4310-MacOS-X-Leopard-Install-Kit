@@ -3,7 +3,8 @@ set -Eeuo pipefail
 
 SOURCE_DIR="${1:-$PWD}"
 SOURCE_DIR="$(cd "$SOURCE_DIR" && pwd -P)"
-PROJECT="$SOURCE_DIR/VoodooSDHC.xcodeproj"
+PROJECT_NAME="VoodooSDHC.xcodeproj"
+PROJECT="$SOURCE_DIR/$PROJECT_NAME"
 BUILD_DIR="$SOURCE_DIR/build-o2micro"
 
 log() { printf '[cardreader-build] %s\n' "$*"; }
@@ -35,20 +36,30 @@ fi
 rm -rf "$BUILD_DIR"
 mkdir -p "$BUILD_DIR"
 
-log "project: $PROJECT"
+log "xcodebuild: $XCODEBUILD"
+log "source directory: $SOURCE_DIR"
+log "project: $PROJECT_NAME"
 log "building i386 KEXT with Xcode 3.2 toolchain"
-"$XCODEBUILD" \
-  -project "$PROJECT" \
-  -target VoodooSDHC \
-  -configuration Release \
-  -sdk macosx10.6 \
-  ARCHS=i386 \
-  VALID_ARCHS=i386 \
-  ONLY_ACTIVE_ARCH=YES \
-  MACOSX_DEPLOYMENT_TARGET=10.6 \
-  GCC_VERSION=4.2 \
-  CONFIGURATION_BUILD_DIR="$BUILD_DIR" \
-  clean build
+
+# Xcode 3.2's xcodebuild is much more reliable when the project bundle is named
+# relative to the current working directory.  In particular, some 3.2 builds
+# reject an otherwise valid absolute -project path with the misleading error
+# "the project ... does not exist in this directory".
+(
+  cd "$SOURCE_DIR"
+  "$XCODEBUILD" \
+    -project "$PROJECT_NAME" \
+    -target VoodooSDHC \
+    -configuration Release \
+    -sdk macosx10.6 \
+    ARCHS=i386 \
+    VALID_ARCHS=i386 \
+    ONLY_ACTIVE_ARCH=YES \
+    MACOSX_DEPLOYMENT_TARGET=10.6 \
+    GCC_VERSION=4.2 \
+    CONFIGURATION_BUILD_DIR="$BUILD_DIR" \
+    clean build
+)
 
 KEXT="$BUILD_DIR/VoodooSDHC.kext"
 [[ -d "$KEXT" ]] || {
