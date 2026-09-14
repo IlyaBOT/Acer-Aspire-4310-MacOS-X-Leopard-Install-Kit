@@ -15,6 +15,7 @@ die() { printf '[cardreader-prepare] ERROR: %s\n' "$*" >&2; exit 1; }
 
 command -v git >/dev/null 2>&1 || die "git is required"
 command -v python3 >/dev/null 2>&1 || die "python3 is required"
+command -v tar >/dev/null 2>&1 || die "tar is required"
 [[ -f "$PATCHER" ]] || die "missing patcher: $PATCHER"
 [[ -f "$HARDENER" ]] || die "missing hardener: $HARDENER"
 
@@ -34,6 +35,8 @@ git -C "$CACHE_DIR" fetch --quiet origin
 git -C "$CACHE_DIR" checkout --quiet --detach "$UPSTREAM_COMMIT"
 ACTUAL="$(git -C "$CACHE_DIR" rev-parse HEAD)"
 [[ "$ACTUAL" == "$UPSTREAM_COMMIT" ]] || die "expected $UPSTREAM_COMMIT, got $ACTUAL"
+[[ -f "$CACHE_DIR/VoodooSDHC.xcodeproj/project.pbxproj" ]] || \
+  die "pinned upstream checkout is incomplete: VoodooSDHC.xcodeproj/project.pbxproj is missing"
 
 case "$OUT_DIR" in
   "$ROOT_DIR"/output/cardreader/*) ;;
@@ -42,15 +45,16 @@ esac
 rm -rf "$OUT_DIR"
 mkdir -p "$OUT_DIR"
 
-# Copy the pinned tree without its Git metadata; our repo owns the patch recipe,
-# upstream history remains in cache/cardreader/VoodooSDHCI-upstream.
+# Export exactly the tracked files from the pinned commit.  Using git archive is
+# more reliable than copying the working tree on old macOS/BSD tar and guarantees
+# that bundle directories such as VoodooSDHC.xcodeproj are preserved.
 (
-  cd "$CACHE_DIR"
-  tar --exclude=.git -cf - .
-) | (
   cd "$OUT_DIR"
-  tar -xf -
+  git -C "$CACHE_DIR" archive "$UPSTREAM_COMMIT" | tar -xf -
 )
+
+[[ -f "$OUT_DIR/VoodooSDHC.xcodeproj/project.pbxproj" ]] || \
+  die "prepared source is incomplete: VoodooSDHC.xcodeproj/project.pbxproj was not exported"
 
 python3 "$PATCHER" "$OUT_DIR"
 python3 "$HARDENER" "$OUT_DIR"
@@ -58,5 +62,6 @@ printf '%s\n' "$UPSTREAM_COMMIT" > "$OUT_DIR/.upstream-commit"
 
 log "prepared source: $OUT_DIR"
 log "upstream: coolstar/VoodooSDHCI@$UPSTREAM_COMMIT"
+log "xcode project: $OUT_DIR/VoodooSDHC.xcodeproj"
 log "inspect changes with:"
 log "  git --no-pager diff --no-index '$CACHE_DIR' '$OUT_DIR' || true"
