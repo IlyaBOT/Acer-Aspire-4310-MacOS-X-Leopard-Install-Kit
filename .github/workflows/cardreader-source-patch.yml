@@ -25,6 +25,10 @@ jobs:
           cpp = (root / 'VoodooSDHC.cpp').read_text()
           hdr = (root / 'VoodooSDHC.h').read_text()
           plist = (root / 'Info.plist').read_text()
+
+          power_pos = cpp.find('if (!powerSD(slot))')
+          init_clock_pos = cpp.find('if (!calcClock(slot, 400000))')
+
           checks = {
               'PCI ID': '0x71201217' in plist,
               'PIO': '#define USE_SDMA 0' in cpp,
@@ -34,6 +38,10 @@ jobs:
               'reset timeout': 'reset timeout type=' in cpp,
               'fixed interrupt wait': 'interrupt timeout mask=' in cpp,
               'old infinite command wait removed': 'while(this->PCIRegP[slot]->PresentState & ComInhibitCMD);' not in cpp,
+              'waits for command complete': 'if (nis & CmdComplete)' in cpp,
+              'restores command status enables': 'NormalIntStatusEn |= (CmdComplete | ErrorInterrupt)' in cpp,
+              'v1/v2 clock divider': 'UInt16 encodedDiv' in cpp and 'encodedDiv | InternalClockEn | SDClockEn' in cpp,
+              'power before initial clock': 0 <= power_pos < init_clock_pos,
           }
           for name, ok in checks.items():
               print(f'{name}: {ok}')
