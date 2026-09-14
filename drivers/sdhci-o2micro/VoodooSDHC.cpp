@@ -381,8 +381,7 @@ bool VoodooSDHC::cardInit(UInt8 slot)
 			}
 		}
 		if (!opCondComplete) {
-			IOLog("VoodooSDHCI: timeout waiting for legacy card ACMD41
-");
+			IOLog("VoodooSDHCI: timeout waiting for legacy card ACMD41\n");
 			dumpRegs(slot);
 			Reset(slot, CMD_RESET);
 			Reset(slot, DAT_RESET);
