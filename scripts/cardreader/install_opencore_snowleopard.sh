@@ -63,7 +63,7 @@ mount_efi_device() {
   local dev="$1" mp
   mp="$(disk_mount_point "$dev")"
   if [[ -z "$mp" || "$mp" == "Not mounted" ]]; then
-    log "mounting EFI from $dev"
+    log "mounting EFI from $dev" >&2
     sudo diskutil mount "$dev" >/dev/null || return 1
     mp="$(disk_mount_point "$dev")"
   fi
