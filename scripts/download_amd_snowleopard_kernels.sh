@@ -231,9 +231,12 @@ expand_pkg_tree() {
 
 kernel_version_matches() {
   local kernel="$1" darwin="$2" xnu="$3"
-  strings "$kernel" | grep -Fq "Darwin Kernel Version $darwin" && return 0
-  strings "$kernel" | grep -Fq "xnu-$xnu" && return 0
-  strings "$kernel" | grep -Fq "$xnu" && return 0
+  # Avoid `strings | grep -q` here: with `set -o pipefail`, grep can exit as soon
+  # as it finds a match and cause `strings` to receive SIGPIPE, making a valid
+  # match look like a failed pipeline. Search the Mach-O bytes directly instead.
+  LC_ALL=C grep -aFq "Darwin Kernel Version $darwin" "$kernel" 2>/dev/null && return 0
+  LC_ALL=C grep -aFq "xnu-$xnu" "$kernel" 2>/dev/null && return 0
+  LC_ALL=C grep -aFq "$xnu" "$kernel" 2>/dev/null && return 0
   return 1
 }
 
