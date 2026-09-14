@@ -51,7 +51,7 @@ INFO="$KEXT/Contents/Info.plist"
 [[ -f "$BIN" && -f "$INFO" ]] || die "not a VoodooSDHC.kext bundle: $KEXT"
 file "$BIN" | grep -q 'i386' || die "KEXT executable does not contain i386"
 plutil -lint "$INFO" >/dev/null || die "invalid KEXT Info.plist"
-MATCH="$(/usr/libexec/PlistBuddy -c 'Print :IOKitPersonalities:SD Card Host Controller:IOPCIMatch' "$INFO" 2>/dev/null || true)"
+MATCH="$(/usr/libexec/PlistBuddy -c 'Print :IOKitPersonalities:SD\ Card\ Host\ Controller:IOPCIMatch' "$INFO" 2>/dev/null || true)"
 printf '%s\n' "$MATCH" | grep -q '0x71201217' || die "KEXT does not match O2Micro 1217:7120"
 
 if [[ "$DISABLE_SLE" -eq 0 ]]; then
