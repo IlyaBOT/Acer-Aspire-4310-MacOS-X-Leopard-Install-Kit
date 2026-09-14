@@ -75,7 +75,9 @@ file "$BIN" | grep -q 'i386' || die "built binary does not contain i386"
 
 log "Info.plist"
 plutil -lint "$KEXT/Contents/Info.plist"
-/usr/libexec/PlistBuddy -c 'Print :IOKitPersonalities:SD Card Host Controller:IOPCIMatch' "$KEXT/Contents/Info.plist"
+MATCH="$(/usr/libexec/PlistBuddy -c 'Print :IOKitPersonalities:SD\ Card\ Host\ Controller:IOPCIMatch' "$KEXT/Contents/Info.plist")"
+printf '%s\n' "$MATCH"
+printf '%s\n' "$MATCH" | grep -q '0x71201217' || die "built KEXT does not match O2Micro 1217:7120"
 
 # Snow Leopard's kextutil validates ownership as well as linkage. Validate a
 # disposable root-owned copy so subsequent builds can still clean BUILD_DIR.
