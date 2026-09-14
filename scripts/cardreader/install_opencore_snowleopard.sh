@@ -309,7 +309,16 @@ else
 fi
 
 set_field() {
-  local key="$1" type="$2" value="$3" path=":Kernel:Add:$INDEX:$key"
+  # Bash 3.2 expands a compound `local a=... b=... c=$a` command before the
+  # assignments take effect. Under `set -u`, referencing $key in that same
+  # declaration therefore aborts with "unbound variable". Assign in separate
+  # statements so this remains Snow Leopard/Bash-3.2 safe.
+  local key type value path
+  key="$1"
+  type="$2"
+  value="$3"
+  path=":Kernel:Add:$INDEX:$key"
+
   if "$PB" -c "Print $path" "$CONFIG" >/dev/null 2>&1; then
     sudo "$PB" -c "Set $path $value" "$CONFIG"
   else
