@@ -36,3 +36,4 @@ opencore-*.txt
 
 # Local hardware reports can contain machine-specific firmware and device data.
 *SysReport*.zip
+*SysReport*.tar.gz
