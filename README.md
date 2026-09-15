@@ -1,221 +1,148 @@
-# Acer Aspire 4310 Legacy macOS Install Kit
+# Weird Legacy Laptops macOS Install Kit
 
-Инструмент готовит проверяемые staging-деревья и загрузочную USB-флешку для:
+A profile-driven toolkit for building and troubleshooting macOS/OpenCore install media for old laptops whose firmware, CPU or device mix does not fit a normal modern Hackintosh recipe.
 
-1. Mac OS X Leopard 10.5.x → 10.5.8 — основной профиль;
-2. Mac OS X Snow Leopard 10.6.x → 10.6.8 — вторичный профиль.
+> Repository slug is still `Acer-Aspire-4310-MacOS-X-Leopard-Install-Kit` for compatibility. The project itself is now organized as a multi-laptop installer kit.
 
-Основной backend — актуальная stable версия OpenCore через OpenDuet на legacy BIOS. Chameleon сохранён только как fallback из предоставленного пользователем проверяемого архива. Ни retail installer, ни дистрибутивы Kalyway/iATKOS/iDeneb/iPC/Hazard не скачиваются.
+## Current targets
 
-## Начало работы
+| Target | Leopard | Snow Leopard | Lion | Mountain Lion | Mavericks |
+| --- | --- | --- | --- | --- | --- |
+| Acer Aspire 4310 | supported | supported | planned | — | — |
+| eMachines D640 / Phenom II N930 | — | experimental | planned | planned | planned |
 
-На Intel Mac с macOS Monterey 12 или новее:
+`planned` means profile metadata and the correct installation architecture are defined, but the target-specific kernel/kext path has not been hardware-validated. The tool refuses destructive/build operations for those profiles instead of pretending they work.
+
+## Recommended entry point
+
+```bash
+./legacy_macos_install.sh --list-targets
+./legacy_macos_install.sh --list-profiles
+```
+
+Acer Aspire 4310 examples:
+
+```bash
+./legacy_macos_install.sh --target acer-aspire-4310 --os leopard --doctor
+./legacy_macos_install.sh --target acer-aspire-4310 --os snowleopard --download
+./legacy_macos_install.sh --target acer-aspire-4310 --os snowleopard --build
+./legacy_macos_install.sh --target acer-aspire-4310 --os snowleopard \
+  --make-usb --disk /dev/diskX --retail input/SnowLeopard-Retail.iso
+```
+
+eMachines D640 examples:
+
+```bash
+./legacy_macos_install.sh --target emachines-d640-n930 --os snowleopard --doctor
+./legacy_macos_install.sh --target emachines-d640-n930 --os snowleopard --download
+./legacy_macos_install.sh --target emachines-d640-n930 --os snowleopard --build
+sudo ./legacy_macos_install.sh --target emachines-d640-n930 --os snowleopard \
+  --make-usb --disk /dev/sdX --retail /path/to/SnowLeopard10.6.3.iso
+```
+
+The existing Acer entry point remains available and keeps its current command behavior:
 
 ```bash
 ./prepare_aspire4310_macos.sh --doctor
-./prepare_aspire4310_macos.sh --audit --volume "/Volumes/BOOT"
 ./prepare_aspire4310_macos.sh --download
 ./prepare_aspire4310_macos.sh --build --os leopard
+./prepare_aspire4310_macos.sh --build --os snowleopard
+./prepare_aspire4310_macos.sh --list-disks
+./prepare_aspire4310_macos.sh --make-usb --os snowleopard --disk /dev/diskX --retail /path/to.iso
+./prepare_aspire4310_macos.sh --update-efi --os snowleopard --disk /dev/diskX --boot-slice /dev/diskXs1
+./prepare_aspire4310_macos.sh --verify-usb --disk /dev/diskX
 ```
 
-Если пока нужны только небольшие OpenCore/kext/HFS assets без двух больших Apple Combo Updates:
+The dispatcher deliberately wraps rather than rewrites this proven pipeline.
 
-```bash
-./prepare_aspire4310_macos.sh --download --skip-combo-updates
-```
+## Profiles
 
-Положите законно полученный retail-образ в один из путей:
+Canonical layout:
 
 ```text
-input/Leopard-Retail.dmg
-input/Leopard-Retail.iso
-input/SnowLeopard-Retail.dmg
-input/SnowLeopard-Retail.iso
+profiles/
+  acer-aspire-4310/
+    hardware.conf
+    leopard/
+      profile.conf
+      kexts.conf
+    snowleopard/
+      profile.conf
+      kexts.conf
+    lion/
+      profile.conf
+
+  emachines-d640-n930/
+    hardware.conf
+    snowleopard/
+      profile.conf
+      kexts.conf
+    lion/
+      profile.conf
+    mountainlion/
+      profile.conf
+    mavericks/
+      profile.conf
 ```
 
-Или передайте путь к образу/смонтированному retail DVD через `--retail`.
+Compatibility symlinks keep the old Acer engine and the existing D640 Snow Leopard implementation working without duplicating profile data.
 
-## Безопасность дисков
+## Installation methods
 
-Обычные `--doctor`, `--audit`, `--download` и `--build` не размечают диски. `--make-usb` работает только с whole-disk identifier `/dev/diskX`, показывает `diskutil info` и текущую таблицу `diskutil list`, запрещает `Internal: Yes` без дополнительного override и требует буквальный ввод:
+### Leopard / Snow Leopard
+
+These continue to use the existing retail DVD/ISO restore path. The command chain and safety checks from `--doctor` through `--make-usb` are intentionally preserved.
+
+### Lion / Mountain Lion / Mavericks
+
+These profiles use the OpenCore online-Recovery architecture:
 
 ```text
-ERASE /dev/diskX
+FAT32 USB
+├── EFI/OC/...
+└── com.apple.recovery.boot/
+    ├── *.dmg
+    └── *.chunklist
 ```
 
-Не используйте существующую многосекционную флешку с важными данными для `--make-usb`, возьмите отдельную пустую флешку!
+The recovery pair is obtained with OpenCore's `macrecovery.py`. This matches the current OpenCore/Dortania installation model instead of reusing the older DVD restore code. See [`docs/INSTALLATION_METHODS.md`](docs/INSTALLATION_METHODS.md).
 
-Названия томов не зашиты в код. Любой смонтированный том, из-за которого весь физический
-диск должен стать недоступен для записи, можно защитить явно (опция повторяемая):
+## Weird BIOS troubleshooting
+
+The eMachines D640 has a separate low-level USB boot probe:
 
 ```bash
-./prepare_aspire4310_macos.sh --make-usb ... \
-  --protect-volume "/Volumes/KEEP"
+./legacy_macos_install.sh --target emachines-d640-n930 --usb-probe --list
+sudo ./legacy_macos_install.sh --target emachines-d640-n930 --usb-probe \
+  --disk /dev/sdX --case mbr-direct
 ```
 
-Сначала можно посмотреть точный план без записи:
+`--usb-probe` is intentionally opt-in. It is destructive and tests BIOS -> MBR -> PBR handoff independently of OpenCore/macOS, so it does **not** belong inside normal `--make-usb` automatically.
 
-```bash
-./prepare_aspire4310_macos.sh --make-usb --os leopard \
-  --disk /dev/diskX --retail input/Leopard-Retail.iso --dry-run
-```
-
-### Сохранение существующего boot-раздела
-
-Для внешнего GPT-диска ровно с двумя разделами отдельный режим сохраняет первый FAT32
-boot-раздел, полностью заменяет на нём EFI/OpenDuet и стирает только второй раздел под
-installer. Старые boot-файлы предварительно копируются в локальный игнорируемый
-`backup/usb-.../`.
-
-Сначала обязательно выполнить dry-run с явными whole-disk и slice identifiers:
-
-```bash
-./prepare_aspire4310_macos.sh --make-usb --layout preserve \
-  --os leopard --bootloader opencore \
-  --disk /dev/diskX \
-  --boot-slice /dev/diskXs1 \
-  --installer-slice /dev/diskXs2 \
-  --retail input/Leopard-Retail.iso \
-  --dry-run
-```
-
-Режим требует, чтобы boot-раздел был `s1`, заменяемый раздел — `s2`, а других разделов на
-диске не было. Без `--dry-run` потребуется буквальное подтверждение с обоими slice IDs.
-Обычный `--layout fresh` по-прежнему переразмечает весь выбранный диск.
-
-## Build profiles
-
-По умолчанию создаётся минимальный диагностический профиль:
+## Repository layout
 
 ```text
-output/leopard/opencore-vanilla/ESP/
-output/leopard/opencore-custom/ESP/     # только при наличии custom kernel
-output/snowleopard/opencore-vanilla/ESP/
-output/snowleopard/opencore-custom/ESP/
-output/<os>/chameleon/                  # только с ручным архивом
+legacy_macos_install.sh          human-facing multi-target dispatcher
+prepare_aspire4310_macos.sh      proven Acer legacy engine / compatibility CLI
+profiles/                        laptop + OS profile hierarchy
+scripts/                         implementation and diagnostic helpers
+docs/                            hardware/research/troubleshooting notes
+input/                           user-supplied retail media, ACPI, kernels
+cache/                           downloaded/extracted working cache (ignored)
+output/                          generated builds (ignored)
+downloads/                       cached downloads; manifest is tracked
 ```
 
-В minimal входят лишь SMC emulator и legacy PS/2 stack. Audio, battery и SATA injectors добавляются только явно:
+Most users should start with `legacy_macos_install.sh` and only call scripts under `scripts/` while debugging a specific subsystem.
 
-```bash
-./prepare_aspire4310_macos.sh --build --os leopard --kext-set full
-./prepare_aspire4310_macos.sh --build --os leopard --sata injected
-```
+## O2Micro SD card reader driver
 
-Для пользовательского DSDT:
+The O2Micro `1217:7120` VoodooSDHCI work is maintained separately so this installer repository does not grow into a driver-development tree:
 
-```bash
-cp DSDT.aml input/acpi/
-./prepare_aspire4310_macos.sh --build --os leopard --acpi patched
-```
+https://github.com/IlyaBOT/VoodooSDHCI-O2Micro-7120
 
-Для повторных boot-тестов готовый installer-раздел восстанавливать заново не нужно. Эта
-операция пересобирает профиль, сохраняет старые boot-файлы в `backup/` и заменяет только
-EFI/OpenDuet на первом разделе:
+That repository contains the reproducible source patch pipeline, Snow Leopard Xcode build helper, OpenCore install/rollback helpers and hardware-test notes.
 
-```bash
-./prepare_aspire4310_macos.sh --update-efi --os leopard --bootloader opencore \
-  --disk /dev/diskX --boot-slice /dev/diskXs1
-```
+## Safety
 
-Перед заменой скрипт всегда перемонтирует boot-раздел в режиме записи и проверяет его
-временным файлом. Поэтому ранее выполненный `diskutil mount readOnly` не требует ручного
-перемонтирования; при реально повреждённой или защищённой от записи FAT операция
-останавливается до удаления старого EFI.
-
-## OpenCore choices
-
-Версия не зашита навсегда: `--download` получает latest stable release через официальный GitHub API, сохраняет URL/SHA-256/timestamp в `downloads/manifest.tsv`, а config генерируется из `Docs/Sample.plist` именно этого release и проверяется его же `ocvalidate`.
-
-Наличие Intel 64 у Celeron M 520 не означает, что для Leopard подходит OpenDuet X64.
-OpenCore 1.0.7 поддерживает загрузку Mac OS X 10.4–10.5 с i386-архитектурой только через
-32-битную firmware path, поэтому `--oc-arch auto` выбирает IA32. Явный X64 для Leopard
-отклоняется до сборки: на физическом Aspire такой смешанный вариант доходил до XNU, но
-падал в `pmap_enter: pv not in hash list` при обработке EFI runtime map.
-Leopard config использует `KernelArch=i386-user32`: OpenCore выбирает i386-ядро с 32-битным
-userspace и сам добавляет `-legacy`. В `boot-args` остаётся только соответствующий реальному
-одноядерному CPU `cpus=1`; ручной `arch=i386` исключён.
-
-Физический IA32 DEBUG log сначала локализовал панику в MAT-разбитом descriptor
-`OpenRuntime.efi` с нулевым `VirtualStart`. Legacy write-unprotect убрал панику, но XNU 9.4
-затем воспроизводимо остановился сразу после `mig_table_max_displ = 79`. Поэтому Leopard
-runtime-free тест без `OpenRuntime.efi` дошёл до XNU и вызвал немедленный аппаратный reset
-до panic handler. Поэтому `--runtime auto` для Leopard снова выбирает `legacy`:
-`OpenRuntime.efi` загружается, `EnableWriteUnprotector=true`, MAT rebuild выключен, а
-`RequestBootVarRouting=false`. Непригодный runtime-free вариант сохранён только как явный
-`--runtime off`; Snow Leopard auto использует `modern`.
-
-SysReport и независимый Linux ACPI dump физического Aspire содержат две MADT. Linux прямо
-помечает это как BIOS bug, выбирает первую `INTEL/CALISTGA`, а вторую Phoenix
-`PTLTD/\t APIC` не использует. Профиль удаляет только вторую таблицу:
-
-```bash
-./prepare_aspire4310_macos.sh --build --os leopard --runtime legacy \
-  --apic drop-duplicate --kext-set minimal
-```
-
-`--kext-set smc` оставляет только FakeSMC и исключает PS/2 kext metadata из ранней
-инициализации ядра; UEFI PS/2-драйверы picker при этом сохраняются.
-
-Эквивалентная явная команда:
-
-```bash
-./prepare_aspire4310_macos.sh --build --os leopard --oc-arch ia32
-```
-
-HFS auto-selection:
-
-- IA32: `HfsPlus32.efi` (автоматический выбор для Leopard);
-- X64: `HfsPlusLegacy.efi` (только для совместимых профилей; нет требования RDRAND);
-- явный source-available fallback: `--hfs-driver openhfs`.
-
-Одновременно включается ровно один HFS driver.
-
-## Optional custom kernel
-
-Vanilla никогда не перезаписывается. Файлы можно положить в:
-
-```text
-input/kernels/leopard/{kernel,kernelcache,prelinkedkernel}
-input/kernels/snowleopard/{kernel,kernelcache,prelinkedkernel}
-```
-
-`--kernel auto` всегда строит vanilla и дополнительно custom profile, если найден статически подтверждённый i386 artifact. Подробнее: [CUSTOM_KERNEL.md](docs/CUSTOM_KERNEL.md).
-
-Для зависания до первого сообщения IOKit доступен pinned trace-release Apple XNU
-`1228.5.20`: `--prepare-xnu-trace` подготавливает source на любом host, а
-`--build-xnu-trace` собирает RELEASE_I386 в совместимой legacy Xcode-среде и помещает его в
-`input/kernels/leopard/kernel`. Vanilla installer и vanilla EFI при этом не изменяются.
-
-Для изолированной сборки на Intel Mac доступны QEMU build-VM и офлайн bundle:
-`--package-xnu-build-bundle`, `--create-xnu-qemu` и `--start-xnu-qemu`. Гостевая macOS и
-Xcode в проект не скачиваются и не распространяются; используются предоставленные
-пользователем установочные носители. Повторяемый `--guest-media` подключает DMG/ISO/CDR
-только для чтения, например сначала Combo Update 10.5.8, затем Xcode Developer DVD.
-
-## Chameleon fallback
-
-Мёртвый исторический URL больше не используется. Для явного fallback положите архив с `i386/boot0`, `boot1h`, `boot` в:
-
-```text
-input/chameleon/chameleon-binaries.tar.gz
-```
-
-Затем:
-
-```bash
-./prepare_aspire4310_macos.sh --build --os leopard --bootloader chameleon
-```
-
-Автоматизированная GPT USB deployment-команда намеренно использует OpenCore/OpenDuet; Chameleon output остаётся отдельно для fallback режима.
-
-## Документация
-
-- [AUDIT.md](docs/AUDIT.md)
-- [OPENCORE_LEGACY_NOTES.md](docs/OPENCORE_LEGACY_NOTES.md)
-- [TARGET_CPU_RESEARCH.md](docs/TARGET_CPU_RESEARCH.md)
-- [ASPIRE4310_HARDWARE_SNAPSHOT.md](docs/ASPIRE4310_HARDWARE_SNAPSHOT.md)
-- [COLLECT_TARGET_HARDWARE_IDS.md](docs/COLLECT_TARGET_HARDWARE_IDS.md)
-- [TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md)
-- [COMPATIBILITY_MATRIX.md](COMPATIBILITY_MATRIX.md)
-- [SOURCES.md](docs/SOURCES.md)
+Disk-writing modes never run implicitly. Always inspect the selected device before `--make-usb`, keep backups, and use `--dry-run` where the selected implementation supports it. The D640 USB probe is intentionally more destructive than the normal media builder and requires its own explicit invocation.

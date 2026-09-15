@@ -1,0 +1,54 @@
+name: Legacy laptop profile check
+
+on:
+  push:
+    branches:
+      - main
+      - feature/emachines-d640-linux
+    paths:
+      - 'legacy_macos_install.sh'
+      - 'prepare_aspire4310_macos.sh'
+      - 'profiles/**'
+      - 'targets/**'
+      - 'scripts/prepare_emachines_d640_snowleopard.sh'
+      - 'scripts/d640_usb_boot_probe.sh'
+      - '.github/workflows/legacy-profile-check.yml'
+  pull_request:
+    paths:
+      - 'legacy_macos_install.sh'
+      - 'prepare_aspire4310_macos.sh'
+      - 'profiles/**'
+      - 'targets/**'
+      - 'scripts/prepare_emachines_d640_snowleopard.sh'
+      - 'scripts/d640_usb_boot_probe.sh'
+  workflow_dispatch:
+
+jobs:
+  profiles:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate shell syntax and compatibility links
+        run: |
+          bash -n legacy_macos_install.sh
+          bash -n prepare_aspire4310_macos.sh
+          bash -n scripts/prepare_emachines_d640_snowleopard.sh
+          bash -n scripts/d640_usb_boot_probe.sh
+          test -L config/aspire4310.conf
+          test -L profiles/leopard
+          test -L profiles/snowleopard
+          test -L targets/emachines-d640-n930
+          test -f profiles/acer-aspire-4310/leopard/profile.conf
+          test -f profiles/acer-aspire-4310/snowleopard/profile.conf
+          test -f profiles/acer-aspire-4310/lion/profile.conf
+          test -f profiles/emachines-d640-n930/snowleopard/profile.conf
+          test -f profiles/emachines-d640-n930/lion/profile.conf
+          test -f profiles/emachines-d640-n930/mountainlion/profile.conf
+          test -f profiles/emachines-d640-n930/mavericks/profile.conf
+      - name: Exercise human-facing dispatcher
+        run: |
+          ./legacy_macos_install.sh --list-targets
+          ./legacy_macos_install.sh --list-profiles
+          ./legacy_macos_install.sh --target acer-aspire-4310 --os lion --doctor
+          ./legacy_macos_install.sh --target emachines-d640-n930 --os lion --doctor
+          ./legacy_macos_install.sh --target emachines-d640-n930 --usb-probe --list
