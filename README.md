@@ -10,6 +10,7 @@ A profile-driven toolkit for building and troubleshooting macOS/OpenCore install
 | --- | --- | --- | --- | --- | --- |
 | Acer Aspire 4310 | supported | supported | planned | — | — |
 | eMachines D640 / Phenom II N930 | — | experimental | planned | planned | planned |
+| ASUS Eee PC 1215P / Atom N570 | — | planned (10.6.3 first) | planned | — | — |
 
 `planned` means profile metadata and the correct installation architecture are defined, but the target-specific kernel/kext path has not been hardware-validated. The tool refuses destructive/build operations for those profiles instead of pretending they work.
 
@@ -39,6 +40,21 @@ eMachines D640 examples:
 sudo ./legacy_macos_install.sh --target emachines-d640-n930 --os snowleopard \
   --make-usb --disk /dev/sdX --retail /path/to/SnowLeopard10.6.3.iso
 ```
+
+ASUS Eee PC 1215P pre-audit examples:
+
+```bash
+./legacy_macos_install.sh --target asus-eee-pc-1215p --os snowleopard --doctor
+./legacy_macos_install.sh --target asus-eee-pc-1215p --os lion --doctor
+```
+
+Before enabling its build engine, boot Linux on the physical 1215P and collect the private hardware/ACPI report:
+
+```bash
+sudo ./scripts/collect_linux_hardware_v2.sh "$PWD/input/hardware" asus-eee-pc-1215p
+```
+
+See [`profiles/asus-eee-pc-1215p/README.md`](profiles/asus-eee-pc-1215p/README.md) for the current research baseline and audit checklist.
 
 The existing Acer entry point remains available and keeps its current command behavior:
 
@@ -83,6 +99,16 @@ profiles/
       profile.conf
     mavericks/
       profile.conf
+
+  asus-eee-pc-1215p/
+    README.md
+    hardware.conf
+    gma3150.conf
+    snowleopard/
+      profile.conf
+      kexts.conf
+    lion/
+      profile.conf
 ```
 
 Compatibility symlinks keep the old Acer engine and the existing D640 Snow Leopard implementation working without duplicating profile data.
@@ -91,7 +117,9 @@ Compatibility symlinks keep the old Acer engine and the existing D640 Snow Leopa
 
 ### Leopard / Snow Leopard
 
-These continue to use the existing retail DVD/ISO restore path. The command chain and safety checks from `--doctor` through `--make-usb` are intentionally preserved.
+These continue to use the existing retail DVD/ISO restore path. The command chain and safety checks from `--doctor` through `--make-usb` are intentionally preserved for implemented targets.
+
+The 1215P Snow Leopard profile is deliberately blocked at `--doctor` until its physical Linux report is reconciled. It is expected to use a retail 10.6.3 base, i386 kernelspace, an Atom-capable custom kernel, AHCI and the legacy GMA3150/GMA950 framebuffer path.
 
 ### Lion / Mountain Lion / Mavericks
 
@@ -125,9 +153,9 @@ sudo ./legacy_macos_install.sh --target emachines-d640-n930 --usb-probe \
 legacy_macos_install.sh          human-facing multi-target dispatcher
 prepare_aspire4310_macos.sh      proven Acer legacy engine / compatibility CLI
 profiles/                        laptop + OS profile hierarchy
-scripts/                         implementation and diagnostic helpers
+scripts/                         implementation, audit and diagnostic helpers
 docs/                            hardware/research/troubleshooting notes
-input/                           user-supplied retail media, ACPI, kernels
+input/                           user-supplied retail media, ACPI, kernels, private hardware reports
 cache/                           downloaded/extracted working cache (ignored)
 output/                          generated builds (ignored)
 downloads/                       cached downloads; manifest is tracked
@@ -145,4 +173,4 @@ That repository contains the reproducible source patch pipeline, Snow Leopard Xc
 
 ## Safety
 
-Disk-writing modes never run implicitly. Always inspect the selected device before `--make-usb`, keep backups, and use `--dry-run` where the selected implementation supports it. The D640 USB probe is intentionally more destructive than the normal media builder and requires its own explicit invocation.
+Disk-writing modes never run implicitly. Always inspect the selected device before `--make-usb`, keep backups, and use `--dry-run` where the selected implementation supports it. Planned profiles are intentionally doctor-only until their physical hardware and kernel/kext path are validated. The D640 USB probe is intentionally more destructive than the normal media builder and requires its own explicit invocation.

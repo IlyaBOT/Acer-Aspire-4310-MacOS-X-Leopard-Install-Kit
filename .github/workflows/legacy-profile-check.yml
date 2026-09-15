@@ -10,6 +10,7 @@ on:
       - 'prepare_aspire4310_macos.sh'
       - 'profiles/**'
       - 'targets/**'
+      - 'scripts/collect_linux_hardware_v2.sh'
       - 'scripts/prepare_emachines_d640_snowleopard.sh'
       - 'scripts/d640_usb_boot_probe.sh'
       - '.github/workflows/legacy-profile-check.yml'
@@ -19,6 +20,7 @@ on:
       - 'prepare_aspire4310_macos.sh'
       - 'profiles/**'
       - 'targets/**'
+      - 'scripts/collect_linux_hardware_v2.sh'
       - 'scripts/prepare_emachines_d640_snowleopard.sh'
       - 'scripts/d640_usb_boot_probe.sh'
   workflow_dispatch:
@@ -32,6 +34,7 @@ jobs:
         run: |
           bash -n legacy_macos_install.sh
           bash -n prepare_aspire4310_macos.sh
+          bash -n scripts/collect_linux_hardware_v2.sh
           bash -n scripts/prepare_emachines_d640_snowleopard.sh
           bash -n scripts/d640_usb_boot_probe.sh
           test -L config/aspire4310.conf
@@ -45,10 +48,26 @@ jobs:
           test -f profiles/emachines-d640-n930/lion/profile.conf
           test -f profiles/emachines-d640-n930/mountainlion/profile.conf
           test -f profiles/emachines-d640-n930/mavericks/profile.conf
+          test -f profiles/asus-eee-pc-1215p/README.md
+          test -f profiles/asus-eee-pc-1215p/hardware.conf
+          test -f profiles/asus-eee-pc-1215p/gma3150.conf
+          test -f profiles/asus-eee-pc-1215p/snowleopard/profile.conf
+          test -f profiles/asus-eee-pc-1215p/snowleopard/kexts.conf
+          test -f profiles/asus-eee-pc-1215p/lion/profile.conf
       - name: Exercise human-facing dispatcher
         run: |
           ./legacy_macos_install.sh --list-targets
           ./legacy_macos_install.sh --list-profiles
           ./legacy_macos_install.sh --target acer-aspire-4310 --os lion --doctor
           ./legacy_macos_install.sh --target emachines-d640-n930 --os lion --doctor
+          ./legacy_macos_install.sh --target asus-eee-pc-1215p --os snowleopard --doctor
+          ./legacy_macos_install.sh --target asus-eee-pc-1215p --os lion --doctor
           ./legacy_macos_install.sh --target emachines-d640-n930 --usb-probe --list
+      - name: Validate ASUS 1215P safety metadata
+        run: |
+          grep -q 'PROFILE_STATUS=planned' profiles/asus-eee-pc-1215p/snowleopard/profile.conf
+          grep -q 'CUSTOM_KERNEL_REQUIRED=YES' profiles/asus-eee-pc-1215p/snowleopard/profile.conf
+          grep -q 'KERNEL_ARCH=i386' profiles/asus-eee-pc-1215p/snowleopard/profile.conf
+          grep -q 'GFX_NATIVE_PRIMARY_ID="8086:A011"' profiles/asus-eee-pc-1215p/gma3150.conf
+          grep -q 'GFX_CURSOR_PATCH_IDENTIFIER="com.apple.driver.AppleIntelIntegratedFramebuffer"' profiles/asus-eee-pc-1215p/gma3150.conf
+          grep -q 'GFX_CURSOR_PATCH_MAX_KERNEL="11.99.99"' profiles/asus-eee-pc-1215p/gma3150.conf

@@ -20,6 +20,8 @@ Usage:
   ./legacy_macos_install.sh --target acer-aspire-4310 --os snowleopard --build
   ./legacy_macos_install.sh --target emachines-d640-n930 --os snowleopard --doctor
   ./legacy_macos_install.sh --target emachines-d640-n930 --os snowleopard --make-usb --disk /dev/sdX --retail /path/to.iso
+  ./legacy_macos_install.sh --target asus-eee-pc-1215p --os snowleopard --doctor
+  ./legacy_macos_install.sh --target asus-eee-pc-1215p --os lion --doctor
 
 Discovery:
   ./legacy_macos_install.sh --list-targets
@@ -30,7 +32,7 @@ Legacy-BIOS USB probe (explicitly destructive and opt-in):
   sudo ./legacy_macos_install.sh --target emachines-d640-n930 --usb-probe --disk /dev/sdX --case mbr-direct
 
 Target selection:
-  --target acer-aspire-4310 | emachines-d640-n930
+  --target acer-aspire-4310 | emachines-d640-n930 | asus-eee-pc-1215p
   --os leopard | snowleopard | lion | mountainlion | mavericks
 
 All other arguments are passed to the selected implementation. The original
@@ -51,12 +53,13 @@ list_targets() {
   cat <<'EOF'
 acer-aspire-4310       Acer Aspire 4310 / Celeron M 520 / GMA950
 emachines-d640-n930    eMachines D640 / Phenom II N930 / Mobility Radeon HD 5470
+asus-eee-pc-1215p      ASUS Eee PC 1215P / Atom N570 / GMA3150
 EOF
 }
 
 list_profiles() {
   local target os file status method name
-  for target in acer-aspire-4310 emachines-d640-n930; do
+  for target in acer-aspire-4310 emachines-d640-n930 asus-eee-pc-1215p; do
     for os in leopard snowleopard lion mountainlion mavericks; do
       file="$PROFILES_DIR/$target/$os/profile.conf"
       [[ -f "$file" ]] || continue
@@ -110,7 +113,7 @@ done
 [[ -n "$TARGET" ]] || TARGET="acer-aspire-4310"
 
 case "$TARGET" in
-  acer-aspire-4310|emachines-d640-n930) ;;
+  acer-aspire-4310|emachines-d640-n930|asus-eee-pc-1215p) ;;
   *) die "unknown target '$TARGET' (use --list-targets)" ;;
 esac
 
@@ -120,11 +123,10 @@ if (( USB_PROBE == 1 )); then
 fi
 
 if [[ -z "$OS_PROFILE" ]]; then
-  if [[ "$TARGET" == "acer-aspire-4310" ]]; then
-    OS_PROFILE="leopard"
-  else
-    OS_PROFILE="snowleopard"
-  fi
+  case "$TARGET" in
+    acer-aspire-4310) OS_PROFILE="leopard" ;;
+    emachines-d640-n930|asus-eee-pc-1215p) OS_PROFILE="snowleopard" ;;
+  esac
 fi
 
 PROFILE="$PROFILES_DIR/$TARGET/$OS_PROFILE/profile.conf"
@@ -145,7 +147,7 @@ if [[ "${PROFILE_STATUS:-supported}" == "planned" ]]; then
       exit 0
     fi
   done
-  die "$TARGET/$OS_PROFILE is a planned profile. Recovery architecture is documented, but build/USB operations are disabled until hardware-specific kernel/kext validation is complete."
+  die "$TARGET/$OS_PROFILE is a planned profile. Recovery/installer architecture is documented, but build/USB operations are disabled until hardware-specific kernel/kext validation is complete."
 fi
 
 case "$TARGET:$OS_PROFILE" in
