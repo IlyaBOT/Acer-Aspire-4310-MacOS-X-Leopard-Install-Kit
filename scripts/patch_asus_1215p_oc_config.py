@@ -9,8 +9,39 @@ import uuid
 from pathlib import Path
 
 GPU_PATH = "PciRoot(0x0)/Pci(0x2,0x0)"
+CURSOR_COMMENT = "GMA 3150 Cursor corruption fix"
+CURSOR_IDENTIFIER = "com.apple.driver.AppleIntelIntegratedFramebuffer"
 CURSOR_FIND = bytes.fromhex("8b550883bab0000000017e36890424e832bbffff")
 CURSOR_REPLACE = bytes.fromhex("b800000002909090909090909090eb0400000000")
+
+
+def cursor_patch() -> dict:
+    return {
+        "Arch": "i386",
+        "Base": "",
+        "Comment": CURSOR_COMMENT,
+        "Count": 0,
+        "Enabled": True,
+        "Find": CURSOR_FIND,
+        "Identifier": CURSOR_IDENTIFIER,
+        "Limit": 0,
+        "Mask": b"",
+        "MaxKernel": "11.99.99",
+        "MinKernel": "8.0.0",
+        "Replace": CURSOR_REPLACE,
+        "ReplaceMask": b"",
+        "Skip": 0,
+    }
+
+
+def is_cursor_patch(entry: dict) -> bool:
+    return (
+        entry.get("Comment") == CURSOR_COMMENT
+        or (
+            entry.get("Identifier") == CURSOR_IDENTIFIER
+            and entry.get("Find") == CURSOR_FIND
+        )
+    )
 
 
 def patch(config: dict) -> None:
@@ -27,25 +58,13 @@ def patch(config: dict) -> None:
         "AAPL01,DualLink": bytes.fromhex("00"),
     }
 
-    patches = config["Kernel"]["Patch"]
-    patches.append(
-        {
-            "Arch": "i386",
-            "Base": "",
-            "Comment": "GMA 3150 Cursor corruption fix",
-            "Count": 0,
-            "Enabled": True,
-            "Find": CURSOR_FIND,
-            "Identifier": "com.apple.driver.AppleIntelIntegratedFramebuffer",
-            "Limit": 0,
-            "Mask": b"",
-            "MaxKernel": "11.99.99",
-            "MinKernel": "8.0.0",
-            "Replace": CURSOR_REPLACE,
-            "ReplaceMask": b"",
-            "Skip": 0,
-        }
-    )
+    # Be deliberately idempotent. Re-running this helper must replace the
+    # target patch instead of stacking duplicate Kernel -> Patch entries.
+    patches = [
+        entry for entry in config["Kernel"]["Patch"] if not is_cursor_patch(entry)
+    ]
+    patches.append(cursor_patch())
+    config["Kernel"]["Patch"] = patches
 
     scheme = config["Kernel"]["Scheme"]
     scheme["KernelArch"] = "i386"
@@ -56,9 +75,8 @@ def patch(config: dict) -> None:
     # arch=i386 in boot-args too: period kernel packages did the same to avoid
     # instant reboot on CPUs that the vanilla kernel did not recognize.
     nvram = config["NVRAM"]["Add"]["7C436110-AB2A-4BBB-A880-FE41995C9F82"]
-    args = nvram.get("boot-args", "").split()
-    if "arch=i386" not in args:
-        args.append("arch=i386")
+    args = [arg for arg in nvram.get("boot-args", "").split() if arg != "arch=i386"]
+    args.append("arch=i386")
     nvram["boot-args"] = " ".join(args)
 
     # Machine-specific ACPI audit already confirmed PCI0._UID == 0, so no
@@ -94,22 +112,32 @@ def validate(config: dict) -> None:
     assert props.get("AAPL01,DualLink") == b"\x00"
     assert config["Kernel"]["Scheme"]["KernelArch"] == "i386"
     assert config["Kernel"]["Scheme"]["CustomKernel"] is True
-    assert any(
-        entry.get("Identifier") == "com.apple.driver.AppleIntelIntegratedFramebuffer"
-        and entry.get("Find") == CURSOR_FIND
-        and entry.get("Replace") == CURSOR_REPLACE
-        and entry.get("Enabled") is True
-        for entry in config["Kernel"]["Patch"]
-    )
+    matching = [entry for entry in config["Kernel"]["Patch"] if is_cursor_patch(entry)]
+    assert len(matching) == 1
+    entry = matching[0]
+    assert entry.get("Identifier") == CURSOR_IDENTIFIER
+    assert entry.get("Find") == CURSOR_FIND
+    assert entry.get("Replace") == CURSOR_REPLACE
+    assert entry.get("Enabled") is True
+    boot_args = config["NVRAM"]["Add"]["7C436110-AB2A-4BBB-A880-FE41995C9F82"]["boot-args"].split()
+    assert boot_args.count("arch=i386") == 1
 
 
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("config", type=Path)
+    parser.add_argument(
+        "--check",
+        action="store_true",
+        help="validate an already-patched config without modifying it",
+    )
     args = parser.parse_args()
 
     with args.config.open("rb") as handle:
         config = plistlib.load(handle)
+    if args.check:
+        validate(config)
+        return 0
     patch(config)
     validate(config)
     with args.config.open("wb") as handle:
