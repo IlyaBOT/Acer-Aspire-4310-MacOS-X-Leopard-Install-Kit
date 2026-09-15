@@ -3,16 +3,14 @@ set -Eeuo pipefail
 
 ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)"
 TARGET="asus-eee-pc-1215p"
-OS_PROFILE="snowleopard"
-PROFILE_DIR="$ROOT_DIR/profiles/$TARGET/$OS_PROFILE"
+PROFILE_DIR="$ROOT_DIR/profiles/$TARGET/snowleopard"
 HARDWARE_CONF="$ROOT_DIR/profiles/$TARGET/hardware.conf"
 PROFILE_CONF="$PROFILE_DIR/profile.conf"
 KEXT_MANIFEST="$PROFILE_DIR/kexts.conf"
 CACHE_DIR="$ROOT_DIR/cache"
 DOWNLOADS_DIR="$ROOT_DIR/downloads"
 CURRENT_SOURCES="$CACHE_DIR/current-sources.env"
-OUTPUT_DIR="$ROOT_DIR/output/$TARGET/$OS_PROFILE"
-BUILD_ROOT="$OUTPUT_DIR/opencore-custom"
+BUILD_ROOT="$ROOT_DIR/output/$TARGET/snowleopard/opencore-custom"
 KERNEL_DEFAULT="$ROOT_DIR/input/kernels/snowleopard/asus-eee-pc-1215p-kernel"
 KERNEL_FILE="$KERNEL_DEFAULT"
 CONFIG_GENERATOR="$ROOT_DIR/scripts/generate_oc_config.py"
@@ -63,25 +61,24 @@ Destructive USB creation (macOS only):
   --make-usb --disk /dev/diskX --retail /path/to/SnowLeopard10.6.3.iso
 
 Options:
-  --kernel-file PATH                 audited Atom/legacy Darwin 10.3.0 i386 kernel
+  --kernel-file PATH
   --boot-preset normal|verbose|safe|diagnostic
-  --kext-set minimal|full           default: minimal
-  --sata native|injected            default: native; 27C1 AHCI should be native
-  --protect-volume /Volumes/KEEP    repeatable safety guard
+  --kext-set minimal|full
+  --sata native|injected
+  --protect-volume /Volumes/KEEP
   --dry-run
-  --allow-internal                  still requires exact ERASE confirmation
+  --allow-internal
 
---download reuses the project's common OpenCore/OcBinaryData/Legacy-Kexts cache
-and then fetches/verifies a historical Darwin 10.3.0 i386 kernel. Retail macOS
-media is never downloaded by this project.
+--download reuses the shared OpenCore/OcBinaryData/Legacy-Kexts cache and then
+tries to retrieve a historical Darwin 10.3.0 i386 legacy-kernel candidate.
+Retail Mac OS X media is never downloaded by this project.
 USAGE
 }
 
 need_value() { [[ $# -gt 1 ]] || die "$1 requires a value"; }
 set_mode() { [[ -z "$MODE" || "$MODE" == "$1" ]] || die "Choose exactly one operation"; MODE="$1"; }
 
-[[ -f "$HARDWARE_CONF" && -f "$PROFILE_CONF" && -f "$KEXT_MANIFEST" ]] \
-  || die "ASUS 1215P profile is incomplete"
+[[ -f "$HARDWARE_CONF" && -f "$PROFILE_CONF" && -f "$KEXT_MANIFEST" ]] || die "ASUS 1215P profile is incomplete"
 # shellcheck disable=SC1090
 source "$HARDWARE_CONF"
 # shellcheck disable=SC1090
@@ -136,14 +133,10 @@ load_sources() {
 run_doctor() {
   local failures=0 c
   printf 'Target: %s\n' "$TARGET_MODEL"
-  printf 'CPU: %s (%s cores / %s threads, CPUID %s)\n' "$TARGET_CPU" "$TARGET_CPU_CORES" "$TARGET_CPU_THREADS" "$TARGET_CPU_CPUID"
-  printf 'GPU: %s\n' "$TARGET_GPU"
-  printf 'Panel: %s\n' "$TARGET_DISPLAY"
-  printf 'Ethernet: %s\n' "$TARGET_ETHERNET"
-  printf 'Wi-Fi: %s\n' "$TARGET_WIFI"
-  printf 'Audio: %s\n' "$TARGET_AUDIO"
-  printf 'BIOS: %s\n' "$TARGET_FIRMWARE"
-  printf 'Snow Leopard baseline: %s / i386 custom kernel\n' "$OS_BASELINE"
+  printf 'CPU: %s (%sC/%sT, CPUID %s)\n' "$TARGET_CPU" "$TARGET_CPU_CORES" "$TARGET_CPU_THREADS" "$TARGET_CPU_CPUID"
+  printf 'GPU: %s\nPanel: %s\n' "$TARGET_GPU" "$TARGET_DISPLAY"
+  printf 'Ethernet: %s\nWi-Fi: %s\nAudio: %s\n' "$TARGET_ETHERNET" "$TARGET_WIFI" "$TARGET_AUDIO"
+  printf 'BIOS: %s\nSnow Leopard baseline: %s / i386 custom kernel\n' "$TARGET_FIRMWARE" "$OS_BASELINE"
   printf '\nRequired build tools:\n'
   for c in bash python3 file strings find cp mkdir; do
     if have "$c"; then printf '  OK      %s\n' "$c"; else printf '  MISSING %s\n' "$c"; failures=$((failures+1)); fi
@@ -157,25 +150,25 @@ run_doctor() {
   if validate_kernel "$KERNEL_FILE"; then
     printf '  OK      Darwin 10.3.0 i386 kernel: %s\n' "$KERNEL_FILE"
   else
-    printf '  MISSING/INVALID Atom-compatible Darwin 10.3.0 i386 kernel\n'
+    printf '  MISSING/INVALID Darwin 10.3.0 i386 kernel\n'
     printf '          expected: %s\n' "$KERNEL_FILE"
     failures=$((failures+1))
   fi
   if [[ "$(uname -s 2>/dev/null || true)" == Darwin ]]; then
-    for c in diskutil hdiutil asr plutil ditto lipo; do
+    for c in diskutil hdiutil asr plutil ditto; do
       if have "$c"; then printf '  OK      %s\n' "$c"; else printf '  MISSING %s\n' "$c"; failures=$((failures+1)); fi
     done
   else
-    printf '  NOTE    USB writing requires macOS; config staging/inspection can be done elsewhere.\n'
+    printf '  NOTE    USB writing requires macOS.\n'
   fi
-  printf '\nFirst-boot policy: native 27C1 AHCI, FakeSMC + PS/2, GMA3150 spoof, no Wi-Fi/audio/battery extras yet.\n'
+  printf '\nFirst boot: native 27C1 AHCI, FakeSMC + PS/2, GMA3150 spoof; network/audio/battery remain optional.\n'
   (( failures == 0 ))
 }
 
 run_download() {
   log "Preparing shared OpenCore/OcBinaryData/Legacy-Kexts cache"
   bash "$COMMON_ASSET_ENGINE" --download --skip-combo-updates
-  log "Fetching and validating Darwin 10.3.0 i386 kernel"
+  log "Fetching and validating a historical Darwin 10.3.0 i386 kernel candidate"
   bash "$KERNEL_FETCHER" "$KERNEL_DEFAULT"
 }
 
@@ -199,27 +192,22 @@ copy_kexts() {
     out="$dst/$(basename "$src")"
     [[ ! -e "$out" ]] || die "Kext basename collision: $out"
     copy_tree "$src" "$out"
-    if python3 "$INSPECTOR" --kext "$out" --quiet >/dev/null 2>&1; then
-      exe="$(python3 - "$out/Contents/Info.plist" <<'PY'
+    python3 "$INSPECTOR" --kext "$out" --quiet >/dev/null || die "Invalid kext bundle: $out"
+    exe="$(python3 - "$out/Contents/Info.plist" <<'PY'
 import plistlib,sys
-with open(sys.argv[1],'rb') as f:d=plistlib.load(f)
+with open(sys.argv[1],'rb') as f: d=plistlib.load(f)
 print(d.get('CFBundleExecutable',''))
 PY
 )"
-      if [[ -n "$exe" ]]; then
-        python3 "$INSPECTOR" --kext "$out" --require-arch i386 --quiet \
-          || die "Kext has no usable i386 slice: $out"
-      fi
-    else
-      die "Invalid kext bundle: $out"
+    if [[ -n "$exe" ]]; then
+      python3 "$INSPECTOR" --kext "$out" --require-arch i386 --quiet || die "Kext has no usable i386 slice: $out"
     fi
     log "kext: $(basename "$out") [$static_status] - $purpose"
   done <"$KEXT_MANIFEST"
 }
 
 collect_kexts() {
-  local root="$1"
-  find "$root" -type d -name '*.kext' -print | sed "s#^$root/##" | LC_ALL=C sort
+  find "$1" -type d -name '*.kext' -print | sed "s#^$1/##" | LC_ALL=C sort
 }
 
 run_build() {
@@ -256,7 +244,6 @@ run_build() {
     --oc-root "$ocroot"
     --os snowleopard
     --kernel custom
-    --kernel-arch i386
     --boot-preset "$BOOT_PRESET"
     --runtime-profile modern
     --oc-version "$OC_VERSION"
@@ -282,13 +269,13 @@ run_build() {
     warn "ocvalidate not available for this host"
   fi
 
+  python3 "$CONFIG_PATCHER" --check "$ocroot/config.plist"
   python3 - "$ocroot/config.plist" "$esp/Kernels/kernel" <<'PY'
-import plistlib,sys,hashlib
+import hashlib,plistlib,sys
 cfg=plistlib.load(open(sys.argv[1],'rb'))
 assert cfg['Kernel']['Scheme']['KernelArch']=='i386'
 assert cfg['Kernel']['Scheme']['CustomKernel'] is True
 assert cfg['DeviceProperties']['Add']['PciRoot(0x0)/Pci(0x2,0x0)']['device-id']==bytes.fromhex('A2270000')
-assert any(x.get('Identifier')=='com.apple.driver.AppleIntelIntegratedFramebuffer' and x.get('Enabled') for x in cfg['Kernel']['Patch'])
 print('ASUS 1215P config assertions: PASS')
 print('kernel sha256:', hashlib.sha256(open(sys.argv[2],'rb').read()).hexdigest())
 PY
@@ -306,20 +293,21 @@ PY
 - Wi-Fi: $TARGET_WIFI
 - Audio: $TARGET_AUDIO
 - OpenCore: $OC_VERSION IA32/OpenDuet
-- Kernel: external verified Darwin 10.3.0 i386 custom kernel
+- Kernel: externally verified Darwin 10.3.0 i386 custom kernel
 - KernelArch: i386
 - First-boot kext set: $KEXT_SET
 - SATA policy: $SATA_MODE
 - GMA3150: 0x27A2 spoof + single-link laptop properties + cursor-corruption patch
 - PCI0._UID patch: not required; physical DSDT already reports Zero
 
-This is a bring-up build. Proper GMA3150 acceleration is not expected; native framebuffer behavior must be proven on hardware.
+This is a hardware bring-up build. GMA3150 native framebuffer behavior must still be proven on OS X.
 EOF
-  log "Built: $BUILD_ROOT"
+  log "Built and validated: $BUILD_ROOT"
 }
 
 require_macos() {
   [[ "$(uname -s 2>/dev/null || true)" == Darwin ]] || die "This operation requires macOS"
+  local c
   for c in diskutil hdiutil asr ditto plutil; do have "$c" || die "Missing $c"; done
 }
 
@@ -344,8 +332,8 @@ disk_has_protected_volume() {
 assert_safe_disk() {
   local info internal
   info="$(diskutil info "$DISK")" || die "Cannot inspect $DISK"
-  printf '%s\n' "$info"
-  printf '\n'; diskutil list "$DISK"
+  printf '%s\n\n' "$info"
+  diskutil list "$DISK"
   disk_has_protected_volume "$DISK" && die "$DISK contains a --protect-volume mount"
   internal="$(printf '%s\n' "$info" | awk -F': *' '/Internal:/ {print $2; exit}')"
   [[ "$internal" != Yes* || "$ALLOW_INTERNAL" -eq 1 ]] || die "Refusing internal disk without --allow-internal"
@@ -374,19 +362,21 @@ restore_retail() {
 
 install_efi() {
   local slice="$1" mountp disknum boottool backup
-  diskutil mount "$slice" >/dev/null || die "Cannot mount EFI $slice"
+  diskutil mount "$slice" >/dev/null 2>&1 || true
   mountp="$(diskutil info "$slice" | awk -F': *' '/Mount Point/ {print $2; exit}')"
   [[ -d "$mountp" ]] || die "EFI mount point not found"
-  if [[ -d "$mountp/EFI" || -f "$mountp/boot" ]]; then
+  if [[ -d "$mountp/EFI" || -d "$mountp/Kernels" || -f "$mountp/boot" ]]; then
     backup="$ROOT_DIR/backup/asus1215p-usb-$(date '+%Y%m%d-%H%M%S')-$(basename "$DISK")"
     mkdir -p "$backup"
     [[ -d "$mountp/EFI" ]] && ditto "$mountp/EFI" "$backup/EFI" || true
+    [[ -d "$mountp/Kernels" ]] && ditto "$mountp/Kernels" "$backup/Kernels" || true
     [[ -f "$mountp/boot" ]] && cp -p "$mountp/boot" "$backup/boot" || true
-    sudo rm -rf -- "$mountp/EFI"
+    sudo rm -rf -- "$mountp/EFI" "$mountp/Kernels"
   fi
   sudo ditto "$BUILD_ROOT/ESP/EFI" "$mountp/EFI"
+  sudo ditto "$BUILD_ROOT/ESP/Kernels" "$mountp/Kernels"
   sudo cp -p "$BUILD_ROOT/ESP/boot" "$mountp/boot"
-  [[ -f "$mountp/EFI/OC/config.plist" && -f "$mountp/EFI/BOOT/BOOTIA32.efi" ]] || die "EFI copy verification failed"
+  [[ -f "$mountp/EFI/OC/config.plist" && -f "$mountp/EFI/BOOT/BOOTIA32.efi" && -f "$mountp/Kernels/kernel" ]] || die "EFI/custom-kernel copy verification failed"
   disknum="${DISK#/dev/disk}"
   boottool="$OC_CACHE_ROOT/Utilities/LegacyBoot/BootInstall_IA32.tool"
   chmod +x "$boottool" "$OC_CACHE_ROOT/Utilities/LegacyBoot/BootInstallBase.sh"
@@ -397,25 +387,24 @@ install_efi() {
 run_list_disks() { require_macos; diskutil list; }
 
 run_make_usb() {
-  local efi_slice installer_slice answer
+  local efi_slice installer_slice answer candidate
   require_macos
   [[ -n "$DISK" ]] || die "--make-usb requires --disk"
   validate_disk "$DISK"
-  [[ -n "$RETAIL" ]] || {
+  if [[ -z "$RETAIL" ]]; then
     for candidate in "$ROOT_DIR/input/SnowLeopard-Retail.iso" "$ROOT_DIR/input/SnowLeopard-Retail.dmg"; do
       [[ -e "$candidate" ]] && RETAIL="$candidate" && break
     done
-  }
+  fi
   [[ -n "$RETAIL" && -e "$RETAIL" ]] || die "Pass --retail /path/to/10.6.3 retail ISO/DMG"
   run_build
-  load_sources
   assert_safe_disk
   if (( DRY_RUN == 1 )); then
     cat <<EOF
 DRY RUN - no writes performed.
-Would erase $DISK as GPT, create HFS+ installer partition, restore:
+Would erase $DISK as GPT, restore:
   $RETAIL
-then install ASUS 1215P IA32 OpenDuet/OpenCore from:
+and install the validated ASUS 1215P IA32 OpenDuet/OpenCore + custom kernel from:
   $BUILD_ROOT
 EOF
     return 0
@@ -432,7 +421,7 @@ EOF
 }
 
 run_verify_usb() {
-  local efi mp
+  local efi mp path
   require_macos
   [[ -n "$DISK" ]] || die "--verify-usb requires --disk"
   validate_disk "$DISK"
@@ -444,11 +433,11 @@ run_verify_usb() {
   for path in boot EFI/BOOT/BOOTIA32.efi EFI/OC/OpenCore.efi EFI/OC/config.plist EFI/OC/Drivers/HfsPlus32.efi Kernels/kernel; do
     if [[ -e "$mp/$path" ]]; then printf 'FOUND   %s\n' "$path"; else printf 'MISSING %s\n' "$path"; fi
   done
-  # Kernels lives beside EFI on the ESP root, so check it separately even if the
-  # visual list above is useful during debugging.
-  [[ -f "$mp/Kernels/kernel" ]] || warn "Custom kernel missing from ESP/Kernels/kernel"
-  python3 "$CONFIG_PATCHER" "$mp/EFI/OC/config.plist" >/dev/null 2>&1 && warn "Config patcher was idempotency-tested by rewrite; config remains structurally valid." || true
+  [[ -f "$mp/Kernels/kernel" ]] || die "Custom kernel missing from ESP/Kernels/kernel"
+  validate_kernel "$mp/Kernels/kernel" || die "ESP custom kernel is not the expected Darwin 10.3.0 i386 binary"
   plutil -lint "$mp/EFI/OC/config.plist"
+  python3 "$CONFIG_PATCHER" --check "$mp/EFI/OC/config.plist"
+  printf 'ASUS 1215P config validation: PASS\n'
 }
 
 case "$MODE" in
