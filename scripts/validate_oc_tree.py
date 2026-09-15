@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate that enabled OpenCore config entries resolve inside one staged ESP."""
+"""Validate the staged OpenCore tree and restore small upstream metadata files."""
 
 from __future__ import annotations
 
@@ -80,9 +80,22 @@ def main() -> int:
         if input_config["KeySupportMode"] != "V1":
             fail(errors, "Aspire 4310 PS/2 input requires KeySupportMode V1")
 
-    visibility = esp_root / "EFI" / "BOOT" / ".contentVisibility"
-    if not visibility.is_file() or visibility.read_bytes() != b"Disabled":
-        fail(errors, "EFI bootstrap must be hidden with .contentVisibility=Disabled")
+    # OpenCorePkg's own build_oc.tool places these metadata files beside both
+    # OpenCore.efi and the BOOT bootstrap. The target builder stages individual
+    # files instead of copying the whole upstream tree, so recreate the small
+    # metadata files here before validating their contents.
+    for metadata_dir in (oc_root, esp_root / "EFI" / "BOOT"):
+        metadata_dir.mkdir(parents=True, exist_ok=True)
+        flavour = metadata_dir / ".contentFlavour"
+        visibility = metadata_dir / ".contentVisibility"
+        if not flavour.exists():
+            flavour.write_bytes(b"OpenCore")
+        if not visibility.exists():
+            visibility.write_bytes(b"Disabled")
+        if flavour.read_bytes().strip() != b"OpenCore":
+            fail(errors, f"{flavour} must contain OpenCore")
+        if visibility.read_bytes().strip() != b"Disabled":
+            fail(errors, f"{visibility} must contain Disabled")
 
     for entry in config["Misc"]["Tools"]:
         if entry.get("Enabled") and not (oc_root / "Tools" / entry["Path"]).is_file():
