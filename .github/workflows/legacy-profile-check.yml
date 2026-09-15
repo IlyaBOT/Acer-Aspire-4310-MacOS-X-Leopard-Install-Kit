@@ -13,6 +13,9 @@ on:
       - 'scripts/collect_linux_hardware_v2.sh'
       - 'scripts/prepare_emachines_d640_snowleopard.sh'
       - 'scripts/d640_usb_boot_probe.sh'
+      - 'scripts/prepare_asus_1215p_snowleopard.sh'
+      - 'scripts/patch_asus_1215p_oc_config.py'
+      - 'scripts/fetch_atom_1063_kernel.sh'
       - '.github/workflows/legacy-profile-check.yml'
   pull_request:
     paths:
@@ -23,6 +26,9 @@ on:
       - 'scripts/collect_linux_hardware_v2.sh'
       - 'scripts/prepare_emachines_d640_snowleopard.sh'
       - 'scripts/d640_usb_boot_probe.sh'
+      - 'scripts/prepare_asus_1215p_snowleopard.sh'
+      - 'scripts/patch_asus_1215p_oc_config.py'
+      - 'scripts/fetch_atom_1063_kernel.sh'
   workflow_dispatch:
 
 jobs:
@@ -30,13 +36,17 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Validate shell syntax and compatibility links
+
+      - name: Validate shell/Python syntax and compatibility links
         run: |
           bash -n legacy_macos_install.sh
           bash -n prepare_aspire4310_macos.sh
           bash -n scripts/collect_linux_hardware_v2.sh
           bash -n scripts/prepare_emachines_d640_snowleopard.sh
           bash -n scripts/d640_usb_boot_probe.sh
+          bash -n scripts/prepare_asus_1215p_snowleopard.sh
+          bash -n scripts/fetch_atom_1063_kernel.sh
+          python3 -m py_compile scripts/patch_asus_1215p_oc_config.py
           test -L config/aspire4310.conf
           test -L profiles/leopard
           test -L profiles/snowleopard
@@ -49,25 +59,57 @@ jobs:
           test -f profiles/emachines-d640-n930/mountainlion/profile.conf
           test -f profiles/emachines-d640-n930/mavericks/profile.conf
           test -f profiles/asus-eee-pc-1215p/README.md
+          test -f profiles/asus-eee-pc-1215p/AUDIT.md
           test -f profiles/asus-eee-pc-1215p/hardware.conf
           test -f profiles/asus-eee-pc-1215p/gma3150.conf
           test -f profiles/asus-eee-pc-1215p/snowleopard/profile.conf
           test -f profiles/asus-eee-pc-1215p/snowleopard/kexts.conf
           test -f profiles/asus-eee-pc-1215p/lion/profile.conf
+
       - name: Exercise human-facing dispatcher
         run: |
           ./legacy_macos_install.sh --list-targets
           ./legacy_macos_install.sh --list-profiles
           ./legacy_macos_install.sh --target acer-aspire-4310 --os lion --doctor
           ./legacy_macos_install.sh --target emachines-d640-n930 --os lion --doctor
-          ./legacy_macos_install.sh --target asus-eee-pc-1215p --os snowleopard --doctor
+          ./legacy_macos_install.sh --target asus-eee-pc-1215p --os snowleopard --help
           ./legacy_macos_install.sh --target asus-eee-pc-1215p --os lion --doctor
           ./legacy_macos_install.sh --target emachines-d640-n930 --usb-probe --list
-      - name: Validate ASUS 1215P safety metadata
+
+      - name: Validate audited ASUS 1215P metadata
         run: |
-          grep -q 'PROFILE_STATUS=planned' profiles/asus-eee-pc-1215p/snowleopard/profile.conf
+          grep -q 'PROFILE_STATUS=experimental' profiles/asus-eee-pc-1215p/snowleopard/profile.conf
           grep -q 'CUSTOM_KERNEL_REQUIRED=YES' profiles/asus-eee-pc-1215p/snowleopard/profile.conf
           grep -q 'KERNEL_ARCH=i386' profiles/asus-eee-pc-1215p/snowleopard/profile.conf
+          grep -q 'TARGET_ETHERNET="Qualcomm Atheros AR8152 v2 1969:2062' profiles/asus-eee-pc-1215p/hardware.conf
+          grep -q 'TARGET_WIFI="Qualcomm Atheros AR9285 168C:002B' profiles/asus-eee-pc-1215p/hardware.conf
+          grep -q 'TARGET_AUDIO="Intel HDA 8086:27D8 subsystem 1043:841C + Realtek ALC269VB 10EC:0269"' profiles/asus-eee-pc-1215p/hardware.conf
+          grep -q 'TARGET_ACPI_PCI_ROOT_UID="0"' profiles/asus-eee-pc-1215p/hardware.conf
           grep -q 'GFX_NATIVE_PRIMARY_ID="8086:A011"' profiles/asus-eee-pc-1215p/gma3150.conf
           grep -q 'GFX_CURSOR_PATCH_IDENTIFIER="com.apple.driver.AppleIntelIntegratedFramebuffer"' profiles/asus-eee-pc-1215p/gma3150.conf
           grep -q 'GFX_CURSOR_PATCH_MAX_KERNEL="11.99.99"' profiles/asus-eee-pc-1215p/gma3150.conf
+
+      - name: Unit-test ASUS GMA3150 config postprocessor
+        run: |
+          python3 - <<'PY'
+          import plistlib, pathlib, subprocess, tempfile
+          config = {
+              'DeviceProperties': {'Add': {}, 'Delete': {}},
+              'Kernel': {'Patch': [], 'Scheme': {'KernelArch':'i386','CustomKernel':True,'FuzzyMatch':True}},
+              'NVRAM': {'Add': {'7C436110-AB2A-4BBB-A880-FE41995C9F82': {'boot-args':'-v'}}},
+              'PlatformInfo': {'Generic': {}},
+              'UEFI': {'Drivers': []},
+          }
+          with tempfile.TemporaryDirectory() as td:
+              p = pathlib.Path(td) / 'config.plist'
+              with p.open('wb') as f: plistlib.dump(config, f)
+              for _ in range(2):
+                  subprocess.run(['python3','scripts/patch_asus_1215p_oc_config.py',str(p)], check=True)
+              subprocess.run(['python3','scripts/patch_asus_1215p_oc_config.py','--check',str(p)], check=True)
+              cfg = plistlib.load(p.open('rb'))
+              matches = [x for x in cfg['Kernel']['Patch'] if x.get('Comment') == 'GMA 3150 Cursor corruption fix']
+              assert len(matches) == 1
+              assert cfg['DeviceProperties']['Add']['PciRoot(0x0)/Pci(0x2,0x0)']['device-id'] == bytes.fromhex('A2270000')
+              assert cfg['NVRAM']['Add']['7C436110-AB2A-4BBB-A880-FE41995C9F82']['boot-args'].split().count('arch=i386') == 1
+          print('ASUS config postprocessor: PASS')
+          PY
