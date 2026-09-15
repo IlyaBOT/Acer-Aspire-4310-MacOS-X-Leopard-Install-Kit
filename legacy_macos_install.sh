@@ -38,10 +38,9 @@ Target selection:
 All other arguments are passed to the selected implementation. The original
 Acer entry point ./prepare_aspire4310_macos.sh remains supported unchanged.
 
-Lion and newer profiles use the OpenCore online-Recovery architecture
-(com.apple.recovery.boot + recovery DMG/chunklist downloaded by macrecovery.py).
-Profiles marked 'planned' are metadata/documentation only until their hardware
-kernel/kext path has been validated; destructive/build operations are rejected.
+Profiles marked 'experimental' have a build/media implementation but still need
+physical bring-up. Profiles marked 'planned' are metadata/documentation only;
+build and destructive operations are rejected for them.
 EOF
 }
 
@@ -83,35 +82,22 @@ fi
 
 while (($#)); do
   case "$1" in
-    --target)
-      need_value "$@"; shift; TARGET="$1"
-      ;;
-    --os)
-      need_value "$@"; shift; OS_PROFILE="$1"
-      ;;
-    --usb-probe)
-      USB_PROBE=1
-      ;;
-    --list-targets)
-      list_targets; exit 0
-      ;;
+    --target) need_value "$@"; shift; TARGET="$1" ;;
+    --os) need_value "$@"; shift; OS_PROFILE="$1" ;;
+    --usb-probe) USB_PROBE=1 ;;
+    --list-targets) list_targets; exit 0 ;;
     --list-profiles)
       printf '%-24s %-14s %-12s %-15s %s\n' TARGET OS STATUS METHOD NAME
       list_profiles
       exit 0
       ;;
-    -h|--help)
-      usage; exit 0
-      ;;
-    *)
-      FORWARD+=("$1")
-      ;;
+    -h|--help) usage; exit 0 ;;
+    *) FORWARD+=("$1") ;;
   esac
   shift
 done
 
 [[ -n "$TARGET" ]] || TARGET="acer-aspire-4310"
-
 case "$TARGET" in
   acer-aspire-4310|emachines-d640-n930|asus-eee-pc-1215p) ;;
   *) die "unknown target '$TARGET' (use --list-targets)" ;;
@@ -166,7 +152,9 @@ case "$TARGET:$OS_PROFILE" in
     log "target=$TARGET os=$OS_PROFILE engine=prepare_emachines_d640_snowleopard.sh"
     exec "$ROOT_DIR/scripts/prepare_emachines_d640_snowleopard.sh" "${D640_ARGS[@]}"
     ;;
-  *)
-    die "no implementation engine is enabled for $TARGET/$OS_PROFILE"
+  asus-eee-pc-1215p:snowleopard)
+    log "target=$TARGET os=$OS_PROFILE engine=prepare_asus_1215p_snowleopard.sh status=${PROFILE_STATUS:-experimental}"
+    exec bash "$ROOT_DIR/scripts/prepare_asus_1215p_snowleopard.sh" "${FORWARD[@]}"
     ;;
+  *) die "no implementation engine is enabled for $TARGET/$OS_PROFILE" ;;
 esac
