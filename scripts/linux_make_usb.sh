@@ -42,7 +42,7 @@ Create a fresh GPT USB (destructive):
     --amd-kernel downloads/amd-kernels/10.6.3/legacy_kernel \
     --expected-kernel-version 10.3.0
 
-Update only EFI/OpenDuet on an existing GPT disk:
+Update only EFI/OpenDuet (and ESP/Kernels when present in the build) on an existing GPT disk:
   sudo ./scripts/linux_make_usb.sh --update-efi \
     --disk /dev/sdX --build-root output/targets/emachines-d640-n930/snowleopard/opencore
 
@@ -244,8 +244,19 @@ if [[ "$ALLOW_INTERNAL" -ne 1 && "$rm_flag" != 1 && "$transport" != usb ]]; then
 fi
 
 partition_path() {
-  local number="$1"
-  lsblk -lnpo NAME,PARTN "$DISK" | awk -v n="$number" '$2 == n {print $1; exit}'
+  local number="$1" candidate partno
+  # Do not depend on lsblk's PARTN column: it is missing in some older util-linux
+  # builds and live environments. TYPE is much older; the actual partition number
+  # is read from sysfs for sdX, nvme, mmcblk and other block-device naming schemes.
+  while IFS= read -r candidate; do
+    [[ -n "$candidate" && -b "$candidate" ]] || continue
+    partno="$(cat "/sys/class/block/$(basename "$candidate")/partition" 2>/dev/null || true)"
+    if [[ "$partno" == "$number" ]]; then
+      printf '%s\n' "$candidate"
+      return 0
+    fi
+  done < <(lsblk -lnpo NAME,TYPE "$DISK" | awk '$2 == "part" {print $1}')
+  return 1
 }
 
 settle_partitions() {
@@ -259,7 +270,7 @@ unmount_children() {
   while IFS= read -r target; do
     [[ -n "$target" ]] || continue
     umount "$target" 2>/dev/null || true
-  done < <(lsblk -lnpo MOUNTPOINTS "$DISK" | awk 'NF')
+  done < <(lsblk -lnpo MOUNTPOINT "$DISK" | awk 'NF')
 }
 
 assert_build_root() {
@@ -295,24 +306,32 @@ copy_efi_tree() {
   local part="$1" backup_dir
   mount_esp "$part"
   backup_dir="$(pwd -P)/backup/linux-efi-$(date -u '+%Y%m%dT%H%M%SZ')-$(basename "$DISK")"
-  if [[ -d "$ESP_MOUNT/EFI" || -f "$ESP_MOUNT/boot" ]]; then
+  if [[ -d "$ESP_MOUNT/EFI" || -d "$ESP_MOUNT/Kernels" || -f "$ESP_MOUNT/boot" ]]; then
     mkdir -p "$backup_dir"
     [[ -d "$ESP_MOUNT/EFI" ]] && cp -a "$ESP_MOUNT/EFI" "$backup_dir/EFI"
+    [[ -d "$ESP_MOUNT/Kernels" ]] && cp -a "$ESP_MOUNT/Kernels" "$backup_dir/Kernels"
     [[ -f "$ESP_MOUNT/boot" ]] && cp -a "$ESP_MOUNT/boot" "$backup_dir/boot"
-    log "Backed up existing EFI/OpenDuet files to $backup_dir"
+    log "Backed up existing EFI/OpenDuet/kernel files to $backup_dir"
   fi
-  rm -rf -- "$ESP_MOUNT/EFI"
+  rm -rf -- "$ESP_MOUNT/EFI" "$ESP_MOUNT/Kernels"
   mkdir -p "$ESP_MOUNT/EFI"
   # FAT does not support Unix uid/gid/mode metadata. Avoid cp -a here: when
   # running as root GNU cp tries to restore ownership and aborts with EPERM.
   # Copy the complete tree (including .contentVisibility/.contentFlavour)
   # while deliberately discarding metadata FAT cannot represent.
   cp -R --no-preserve=ownership,mode,timestamps "$BUILD_ROOT/ESP/EFI"/. "$ESP_MOUNT/EFI"/
+  if [[ -d "$BUILD_ROOT/ESP/Kernels" ]]; then
+    mkdir -p "$ESP_MOUNT/Kernels"
+    cp -R --no-preserve=ownership,mode,timestamps "$BUILD_ROOT/ESP/Kernels"/. "$ESP_MOUNT/Kernels"/
+  fi
   if [[ -f "$BUILD_ROOT/ESP/boot" ]]; then
     cp --no-preserve=ownership,mode,timestamps "$BUILD_ROOT/ESP/boot" "$ESP_MOUNT/boot"
   fi
   [[ -f "$ESP_MOUNT/EFI/OC/config.plist" ]] || die "EFI copy failed: missing EFI/OC/config.plist"
   [[ -f "$ESP_MOUNT/EFI/BOOT/BOOTIA32.efi" ]] || die "EFI copy failed: missing EFI/BOOT/BOOTIA32.efi"
+  if [[ -f "$BUILD_ROOT/ESP/Kernels/kernel" ]]; then
+    [[ -f "$ESP_MOUNT/Kernels/kernel" ]] || die "EFI copy failed: missing Kernels/kernel"
+  fi
   sync
   umount "$ESP_MOUNT"
 }
@@ -331,7 +350,7 @@ install_openduet() {
   while IFS= read -r mp; do
     [[ -n "$mp" ]] || continue
     umount "$mp" 2>/dev/null || true
-  done < <(lsblk -nro MOUNTPOINTS "$ESP_PART" | awk 'NF')
+  done < <(lsblk -nro MOUNTPOINT "$ESP_PART" | awk 'NF')
 }
 
 kernel_version_ok() {
@@ -345,7 +364,7 @@ verify_target() {
   [[ -n "$ESP_PART" ]] || ESP_PART="$(partition_path 1)"
   [[ -n "$INSTALLER_PART" ]] || INSTALLER_PART="$(partition_path 2)"
   printf 'Disk: %s\n' "$DISK"
-  lsblk -o NAME,PATH,SIZE,FSTYPE,LABEL,PARTLABEL,PARTTYPE,MOUNTPOINTS "$DISK"
+  lsblk -o NAME,PATH,SIZE,FSTYPE,LABEL,MOUNTPOINT "$DISK"
 
   prepare_temp
   if [[ -n "$ESP_PART" && -b "$ESP_PART" ]]; then
@@ -353,6 +372,11 @@ verify_target() {
     if mount -o ro "$ESP_PART" "$tmp"; then
       [[ -f "$tmp/EFI/OC/config.plist" ]] && printf 'PASS EFI/OC/config.plist\n' || { printf 'FAIL EFI/OC/config.plist\n'; ok=0; }
       [[ -f "$tmp/boot" ]] && printf 'PASS OpenDuet /boot\n' || { printf 'FAIL OpenDuet /boot\n'; ok=0; }
+      if [[ -n "$BUILD_ROOT" && -f "$BUILD_ROOT/ESP/Kernels/kernel" ]]; then
+        [[ -f "$tmp/Kernels/kernel" ]] && printf 'PASS ESP custom kernel\n' || { printf 'FAIL ESP custom kernel\n'; ok=0; }
+      elif [[ -f "$tmp/Kernels/kernel" ]]; then
+        printf 'PASS ESP custom kernel\n'
+      fi
       umount "$tmp"
     else
       printf 'FAIL mounting EFI partition\n'; ok=0
@@ -397,7 +421,11 @@ if [[ "$MODE" == update-efi ]]; then
   fstype="$(blkid -s TYPE -o value "$ESP_PART" 2>/dev/null || true)"
   [[ "$fstype" == vfat || "$fstype" == msdos || "$fstype" == fat ]] || die "EFI partition is not FAT: $ESP_PART ($fstype)"
   if (( DRY_RUN == 1 )); then
-    printf 'DRY RUN: would replace EFI/OpenDuet on %s and reinstall legacy boot sectors on %s\n' "$ESP_PART" "$DISK"
+    if [[ -f "$BUILD_ROOT/ESP/Kernels/kernel" ]]; then
+      printf 'DRY RUN: would replace EFI/OpenDuet + custom kernel on %s and reinstall legacy boot sectors on %s\n' "$ESP_PART" "$DISK"
+    else
+      printf 'DRY RUN: would replace EFI/OpenDuet on %s and reinstall legacy boot sectors on %s\n' "$ESP_PART" "$DISK"
+    fi
     exit 0
   fi
   confirm_exact "UPDATE EFI $ESP_PART ON $DISK"
@@ -445,13 +473,13 @@ Would:
   2. create 200 MiB FAT32 EFI partition + installer partition
   3. restore the retail installer using $SELECTED_RESTORE mode
   4. back up retail /mach_kernel and install the AMD kernel
-  5. copy OpenCore EFI and run OpenCorePkg's Linux LegacyBoot installer
+  5. copy OpenCore EFI/OpenDuet (plus ESP/Kernels when present) and run OpenCorePkg's Linux LegacyBoot installer
 PLAN
   exit 0
 fi
 
 printf 'WARNING: all data on %s will be destroyed.\n' "$DISK"
-lsblk -o NAME,PATH,SIZE,MODEL,TRAN,RM,FSTYPE,LABEL,MOUNTPOINTS "$DISK"
+lsblk -o NAME,PATH,SIZE,MODEL,TRAN,RM,FSTYPE,LABEL,MOUNTPOINT "$DISK"
 confirm_exact "ERASE $DISK"
 unmount_children
 
