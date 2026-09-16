@@ -7,6 +7,7 @@ LOCK_FILE="$ROOT_DIR/SOURCE.lock"
 SRC_DIR="$ROOT_DIR/src/xnu"
 WORK_DIR="$ROOT_DIR/work/n570-debug"
 ARTIFACT_DIR="$ROOT_DIR/artifacts/n570-debug"
+BUILD_TOOLS_BIN="$ROOT_DIR/work/build-tools/bin"
 SDKROOT="${SDKROOT:-/Developer/SDKs/MacOSX10.6.sdk}"
 
 # shellcheck disable=SC1090
@@ -31,6 +32,15 @@ have make || die "make is required"
 grep -q 'CPUID_MODEL_ATOM' "$SRC_DIR/osfmk/i386/cpuid.h" || die "Atom model constant not found; apply scripts/apply_n570_atom_debug_patch.py first"
 grep -q 'case CPUID_MODEL_ATOM:' "$SRC_DIR/osfmk/i386/cpuid.c" || die "Atom family case not found"
 grep -F -q '[N570 ATOM-KERNEL]' "$SRC_DIR/osfmk/i386/i386_init.c" || die "N570 debug markers not found"
+
+if [ ! -x "$BUILD_TOOLS_BIN/relpath" ] || [ ! -x "$BUILD_TOOLS_BIN/decomment" ]; then
+  log "Darwin build helpers missing; bootstrapping bootstrap_cmds-72 relpath/decomment"
+  bash "$SCRIPT_DIR/bootstrap_snowleopard_build_tools.sh"
+fi
+RELPATH_TOOL="$BUILD_TOOLS_BIN/relpath"
+DECOMMENT_TOOL="$BUILD_TOOLS_BIN/decomment"
+[ -x "$RELPATH_TOOL" ] || die "relpath helper missing after bootstrap: $RELPATH_TOOL"
+[ -x "$DECOMMENT_TOOL" ] || die "decomment helper missing after bootstrap: $DECOMMENT_TOOL"
 
 rm -rf "$WORK_DIR" "$ARTIFACT_DIR"
 mkdir -p "$WORK_DIR/obj" "$WORK_DIR/sym" "$WORK_DIR/dst" "$ARTIFACT_DIR"
@@ -58,6 +68,8 @@ log "XNU: $XNU_VERSION ($XNU_COMMIT)"
 log "configuration: DEBUG I386"
 log "SDK: $SDKROOT"
 log "MAKEJOBS: $JOBS"
+log "relpath: $RELPATH_TOOL"
+log "decomment: $DECOMMENT_TOOL"
 
 cd "$SRC_DIR"
 make \
@@ -67,6 +79,8 @@ make \
   OBJROOT="$OBJROOT" \
   SYMROOT="$SYMROOT" \
   DSTROOT="$DSTROOT" \
+  RELPATH="$RELPATH_TOOL" \
+  DECOMMENT="$DECOMMENT_TOOL" \
   MAKEJOBS="$JOBS" \
   exporthdrs all
 
