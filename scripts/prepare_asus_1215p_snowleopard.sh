@@ -115,7 +115,7 @@ validate_kernel() {
   local kernel="$1"
   [[ -s "$kernel" ]] || return 1
   file "$kernel" | grep -Eqi 'Mach-O.*i386|Mach-O universal.*i386' || return 1
-  strings "$kernel" | grep -Eq 'Darwin Kernel Version 10\.3\.0|xnu-1504\.3\.12' || return 1
+  grep -aEq 'Darwin Kernel Version 10\.3\.0|xnu-1504\.3\.12' "$kernel" || return 1
 }
 
 load_sources() {
