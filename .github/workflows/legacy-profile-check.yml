@@ -13,6 +13,7 @@ on:
       - 'scripts/collect_linux_hardware_v2.sh'
       - 'scripts/prepare_emachines_d640_snowleopard.sh'
       - 'scripts/linux_make_usb.sh'
+      - 'scripts/linux_install_openduet.sh'
       - 'scripts/d640_usb_boot_probe.sh'
       - 'scripts/select_opencore_release.sh'
       - 'scripts/prepare_asus_1215p_snowleopard.sh'
@@ -29,6 +30,7 @@ on:
       - 'scripts/collect_linux_hardware_v2.sh'
       - 'scripts/prepare_emachines_d640_snowleopard.sh'
       - 'scripts/linux_make_usb.sh'
+      - 'scripts/linux_install_openduet.sh'
       - 'scripts/d640_usb_boot_probe.sh'
       - 'scripts/select_opencore_release.sh'
       - 'scripts/prepare_asus_1215p_snowleopard.sh'
@@ -50,6 +52,7 @@ jobs:
           bash -n scripts/collect_linux_hardware_v2.sh
           bash -n scripts/prepare_emachines_d640_snowleopard.sh
           bash -n scripts/linux_make_usb.sh
+          bash -n scripts/linux_install_openduet.sh
           bash -n scripts/d640_usb_boot_probe.sh
           bash -n scripts/select_opencore_release.sh
           bash -n scripts/prepare_asus_1215p_snowleopard.sh
