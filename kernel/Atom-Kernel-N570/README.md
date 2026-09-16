@@ -29,31 +29,52 @@ kernel/Atom-Kernel-N570/
 ├── ANALYSIS.md
 ├── README.md
 ├── src/
-│   └── xnu/                  # exact xnu-1504.3.12 source snapshot
+│   └── xnu/                         # vendored exact xnu-1504.3.12 snapshot
 ├── scripts/
-│   ├── bootstrap_source.sh   # deterministic fallback source fetch
-│   ├── build_vanilla.sh      # Snow Leopard/Xcode 3.2 I386 RELEASE build
-│   ├── test_vanilla.sh       # source + Mach-O/version/symbol checks
-│   ├── stage_kernel.sh       # copy a test kernel to mounted ESP/Kernels/kernel
-│   └── qemu_boot.sh          # legacy BIOS/OpenDuet QEMU smoke boot
+│   ├── bootstrap_source.sh          # deterministic fallback source fetch
+│   ├── audit_source.sh              # verify exact vanilla source assumptions
+│   ├── build_vanilla.sh             # Snow Leopard/Xcode 3.2 I386 RELEASE build
+│   ├── test_vanilla.sh              # Mach-O/version/symbol/source checks
+│   ├── run_vanilla_pipeline.sh      # bootstrap + audit + build + validation
+│   ├── stage_kernel.sh              # copy test kernel to mounted ESP
+│   ├── prepare_qemu_image_linux.sh  # clone known-good USB and stage kernel
+│   └── qemu_boot.sh                 # legacy BIOS/OpenDuet QEMU smoke boot
 ├── patches/
 │   └── README.md
-├── artifacts/                # local build products; do not commit binaries
-└── work/                     # local OBJROOT/SYMROOT/DSTROOT
+├── artifacts/                       # local build products; ignored
+└── work/                            # OBJROOT/SYMROOT/DSTROOT; ignored
 ```
 
-## Phase 1: vanilla build on Snow Leopard
+The source snapshot is committed on the `Atom-Kernel-N570` branch. `bootstrap_source.sh` remains as a deterministic fallback and verifies the same pinned commit.
 
-On the working Acer Snow Leopard machine:
+## Phase 0: source audit
 
 ```bash
 cd kernel/Atom-Kernel-N570
-./scripts/bootstrap_source.sh
-./scripts/build_vanilla.sh
-./scripts/test_vanilla.sh artifacts/vanilla/mach_kernel
+bash scripts/audit_source.sh
 ```
 
-The build script uses the 10.6 SDK and keeps all generated files outside `src/xnu`.
+The audit must confirm that the tree is still vanilla and that XNU 1504.3.12 does **not** accept Intel family 6 model 28 in `cpuid_set_cpufamily()`.
+
+## Phase 1: vanilla build on Snow Leopard
+
+On the working Acer Snow Leopard machine with Xcode 3.2 and the 10.6 SDK:
+
+```bash
+cd kernel/Atom-Kernel-N570
+bash scripts/run_vanilla_pipeline.sh
+```
+
+Equivalent manual sequence:
+
+```bash
+bash scripts/bootstrap_source.sh
+bash scripts/audit_source.sh
+bash scripts/build_vanilla.sh
+bash scripts/test_vanilla.sh artifacts/vanilla/mach_kernel
+```
+
+The build script keeps all generated files outside `src/xnu`.
 
 Expected primary output:
 
@@ -61,27 +82,62 @@ Expected primary output:
 artifacts/vanilla/mach_kernel
 ```
 
-If `mach_kernel.sys` is produced, it is kept as well because its symbols are useful for later early-boot debugging.
+If available, `mach_kernel.sys` and `mach_kernel.dSYM` are preserved locally because they are useful for mapping later early-boot failures to symbols.
+
+### Optional comparison with retail 10.6.3 kernel
+
+This is informational only; independent builds are not required to be byte-identical:
+
+```bash
+bash scripts/test_vanilla.sh \
+  artifacts/vanilla/mach_kernel \
+  /path/to/retail-10.6.3-mach_kernel
+```
 
 ## Phase 2: QEMU control boot
 
-First validate the self-built vanilla kernel on a CPU model Snow Leopard already supports. Do **not** start by emulating Atom. The control test is intended to distinguish a broken build/toolchain from an Atom-specific failure.
+First validate the self-built vanilla kernel on a CPU model Snow Leopard already supports. Do **not** start by emulating Atom. The control test separates a broken historical build/toolchain from an Atom-specific failure.
 
-1. Make a raw clone/copy of the known-good Snow Leopard/OpenCore test disk.
-2. Mount its ESP.
-3. Stage the self-built kernel:
+### Option A: use an existing raw test-disk image
 
-```bash
-./scripts/stage_kernel.sh artifacts/vanilla/mach_kernel /path/to/mounted/ESP
-```
-
-4. Boot the image with a supported virtual Intel CPU:
+Mount its ESP, then stage the kernel:
 
 ```bash
-./scripts/qemu_boot.sh /path/to/test-disk.raw
+bash scripts/stage_kernel.sh \
+  artifacts/vanilla/mach_kernel \
+  /path/to/mounted/ESP
 ```
 
-Default QEMU CPU is `Penryn` and the machine is legacy BIOS, matching the OpenDuet test path rather than native UEFI.
+Boot it:
+
+```bash
+bash scripts/qemu_boot.sh /path/to/test-disk.raw
+```
+
+### Option B: clone the known-good physical USB on Linux
+
+This reads the physical USB and writes only to a new image file:
+
+```bash
+sudo bash scripts/prepare_qemu_image_linux.sh \
+  --source-disk /dev/sdX \
+  --output "$PWD/artifacts/qemu/asus1215p-vanilla.raw" \
+  --kernel "$PWD/artifacts/vanilla/mach_kernel"
+```
+
+Then:
+
+```bash
+bash scripts/qemu_boot.sh "$PWD/artifacts/qemu/asus1215p-vanilla.raw"
+```
+
+Default QEMU control CPU is `Penryn`, RAM is 2 GiB, SMP is 2, acceleration is TCG, and guest disk writes are discarded with QEMU snapshot mode. The machine boots through legacy BIOS/OpenDuet rather than native UEFI.
+
+Environment overrides are supported:
+
+```bash
+QEMU_CPU=Penryn QEMU_MEM=2048 QEMU_SMP=2 bash scripts/qemu_boot.sh test.raw
+```
 
 ## Phase 3: N570 patching
 
@@ -94,12 +150,13 @@ osfmk/i386/cpuid.c
 osfmk/i386/cpuid.h
 ```
 
-The existing six-byte binary patch is deliberately **not** reproduced in source yet. Its behavior is documented in `ANALYSIS.md` so we can replace it with a source-level implementation instead of blindly spoofing CPUID fields.
+The existing six-byte binary patch is deliberately **not** applied to the source tree. Its behavior is documented in `ANALYSIS.md` so it can be replaced by an explicit source-level implementation instead of globally falsifying the CPU model.
 
 ## Rules
 
-- Keep `src/xnu` at the exact pinned Apple commit until a patch branch/commit intentionally changes it.
-- Never mix vanilla validation changes with Atom behavior changes.
-- Every N570-specific debug print must use `[N570 ATOM-KERNEL]`.
-- Preserve a vanilla artifact and SHA-256 for every patch iteration.
-- Prefer one behavioral change per test kernel.
+- Keep the initial `src/xnu` snapshot identical to Apple commit `902cc0cd840e5c2a7b111bc1781e3c0625ebff5c` until vanilla validation is complete.
+- Never mix vanilla build fixes with Atom behavior changes.
+- Every N570-specific debug print must start with `[N570 ATOM-KERNEL]`.
+- Preserve SHA-256 and symbols for every test kernel.
+- Prefer one behavioral hypothesis per patch/test kernel.
+- Do not spoof the complete Atom model as Merom unless a specific downstream dependency proves that it is necessary.
