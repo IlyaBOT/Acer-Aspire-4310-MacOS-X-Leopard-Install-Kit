@@ -16,7 +16,7 @@ DESC="$(file "$KERNEL")"
 printf '%s\n' "$DESC"
 case "$DESC" in *i386*) ;; *) die "kernel has no i386 architecture" ;; esac
 
-grep -a -q 'xnu-1504\.3\.12' "$KERNEL" || die "xnu-1504.3.12 version string not found"
+grep -a -F -q 'xnu-1504.3.12' "$KERNEL" || die "xnu-1504.3.12 version string not found"
 grep -a -F -q '[N570 ATOM-KERNEL]' "$KERNEL" || die "N570 debug prefix not found in built kernel"
 grep -q 'CPUID_MODEL_ATOM' "$SRC_DIR/osfmk/i386/cpuid.h" || die "Atom model constant missing"
 grep -q 'case CPUID_MODEL_ATOM:' "$SRC_DIR/osfmk/i386/cpuid.c" || die "Atom acceptance case missing"
