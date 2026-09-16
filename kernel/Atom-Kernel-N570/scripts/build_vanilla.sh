@@ -7,6 +7,7 @@ LOCK_FILE="$ROOT_DIR/SOURCE.lock"
 SRC_DIR="$ROOT_DIR/src/xnu"
 WORK_DIR="$ROOT_DIR/work/vanilla"
 ARTIFACT_DIR="$ROOT_DIR/artifacts/vanilla"
+BUILD_TOOLS_BIN="$ROOT_DIR/work/build-tools/bin"
 SDKROOT="${SDKROOT:-/Developer/SDKs/MacOSX10.6.sdk}"
 
 # shellcheck disable=SC1090
@@ -23,7 +24,6 @@ case "$(sw_vers -productVersion 2>/dev/null || true)" in
 esac
 
 have make || die "make is required"
-have gcc || true
 [ -x /Developer/usr/bin/gcc-4.2 ] || die "Xcode 3.2 gcc-4.2 not found at /Developer/usr/bin/gcc-4.2"
 [ -d "$SDKROOT" ] || die "Snow Leopard SDK not found: $SDKROOT"
 [ -f "$SRC_DIR/.xnu-source-commit" ] || die "source not prepared; run scripts/bootstrap_source.sh"
@@ -32,6 +32,19 @@ have gcc || true
 if grep -R -F -q '[N570 ATOM-KERNEL]' "$SRC_DIR" 2>/dev/null; then
   die "N570 patch/debug prefix found in source; vanilla build must remain unmodified"
 fi
+
+# XNU 1504 expects Darwin-internal build tools that are not included in a
+# normal Xcode 3.2 installation. In particular MakeInc.cmd asks xcrun to find
+# relpath and hardcodes /usr/local/bin/decomment. Build pinned bootstrap_cmds-72
+# copies locally and pass them to make explicitly instead of modifying /usr/local.
+if [ ! -x "$BUILD_TOOLS_BIN/relpath" ] || [ ! -x "$BUILD_TOOLS_BIN/decomment" ]; then
+  log "Darwin build helpers missing; bootstrapping bootstrap_cmds-72 relpath/decomment"
+  bash "$SCRIPT_DIR/bootstrap_snowleopard_build_tools.sh"
+fi
+RELPATH_TOOL="$BUILD_TOOLS_BIN/relpath"
+DECOMMENT_TOOL="$BUILD_TOOLS_BIN/decomment"
+[ -x "$RELPATH_TOOL" ] || die "relpath helper missing after bootstrap: $RELPATH_TOOL"
+[ -x "$DECOMMENT_TOOL" ] || die "decomment helper missing after bootstrap: $DECOMMENT_TOOL"
 
 rm -rf "$WORK_DIR" "$ARTIFACT_DIR"
 mkdir -p "$WORK_DIR/obj" "$WORK_DIR/sym" "$WORK_DIR/dst" "$ARTIFACT_DIR"
@@ -59,6 +72,8 @@ log "XNU: $XNU_VERSION ($XNU_COMMIT)"
 log "SDK: $SDKROOT"
 log "configuration: RELEASE I386"
 log "MAKEJOBS: $JOBS"
+log "relpath: $RELPATH_TOOL"
+log "decomment: $DECOMMENT_TOOL"
 
 cd "$SRC_DIR"
 make \
@@ -68,6 +83,8 @@ make \
   OBJROOT="$OBJROOT" \
   SYMROOT="$SYMROOT" \
   DSTROOT="$DSTROOT" \
+  RELPATH="$RELPATH_TOOL" \
+  DECOMMENT="$DECOMMENT_TOOL" \
   MAKEJOBS="$JOBS" \
   exporthdrs all
 
