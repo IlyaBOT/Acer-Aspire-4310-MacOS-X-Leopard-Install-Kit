@@ -4,8 +4,10 @@ set -Eeuo pipefail
 DISK=""
 ESP_PART=""
 BUILD_ROOT=""
+RECOVER_FAT32_BACKUP=0
 TMP=""
 MOUNT_DIR=""
+BACKUP_DIR=""
 
 log() { printf '[openduet-linux] %s\n' "$*"; }
 warn() { printf '[openduet-linux] WARNING: %s\n' "$*" >&2; }
@@ -29,10 +31,21 @@ Usage:
     --esp-part /dev/sdX1 \
     --build-root output/.../opencore-custom
 
+Recovery after a broken upstream BootInstallBase.sh run:
+  sudo ./scripts/linux_install_openduet.sh \
+    --disk /dev/sdX \
+    --esp-part /dev/sdX1 \
+    --build-root output/.../opencore-custom \
+    --recover-fat32-backup
+
 This writes only:
   - the first 446 bytes of the disk MBR (boot0)
   - the first 512 bytes of the FAT ESP (boot1f32-derived PBR)
   - /boot on the FAT ESP
+
+With --recover-fat32-backup, if the primary FAT32 boot sector is invalid but the
+standard backup boot sector at sector 6 is valid, sector 6 is first copied back
+to sector 0. Both sectors are backed up before that recovery write.
 
 The GPT partition table and the installer partition are not rewritten.
 EOF
@@ -44,6 +57,7 @@ while (($#)); do
     --disk) need_value "$@"; shift; DISK="$1" ;;
     --esp-part) need_value "$@"; shift; ESP_PART="$1" ;;
     --build-root) need_value "$@"; shift; BUILD_ROOT="$1" ;;
+    --recover-fat32-backup) RECOVER_FAT32_BACKUP=1 ;;
     -h|--help) usage; exit 0 ;;
     *) die "Unknown argument: $1" ;;
   esac
@@ -75,12 +89,6 @@ elif [[ -f "$OD/bootX64" ]]; then
 else
   die "No bootIA32/bootX64 file in $OD"
 fi
-
-fstype="$(blkid -s TYPE -o value "$ESP_PART" 2>/dev/null || true)"
-case "$fstype" in
-  vfat|fat|msdos) ;;
-  *) die "ESP is not FAT: $ESP_PART ($fstype)" ;;
-esac
 
 parent="$(lsblk -no PKNAME "$ESP_PART" 2>/dev/null | head -n1 || true)"
 if [[ -n "$parent" && "/dev/$parent" != "$DISK" ]]; then
@@ -114,21 +122,58 @@ wait_for_partition() {
   return 1
 }
 
+fat32_sector_valid() {
+  local sector="$1" type sig bps
+  type="$(dd if="$ESP_PART" bs=1 skip=$((sector * 512 + 82)) count=8 status=none 2>/dev/null || true)"
+  sig="$(dd if="$ESP_PART" bs=1 skip=$((sector * 512 + 510)) count=2 status=none 2>/dev/null | od -An -tx1 | tr -d ' \n')"
+  bps="$(dd if="$ESP_PART" bs=1 skip=$((sector * 512 + 11)) count=2 status=none 2>/dev/null | od -An -tx1 | tr -d ' \n')"
+  [[ "$type" == FAT32* && "$sig" == 55aa && "$bps" == 0002 ]]
+}
+
+probe_fstype() {
+  blkid -p -s TYPE -o value "$ESP_PART" 2>/dev/null || true
+}
+
 TMP="$(mktemp -d /tmp/openduet-linux.XXXXXX)"
 MOUNT_DIR="$TMP/esp"
 mkdir -p "$MOUNT_DIR"
-
-backup_dir="$(pwd -P)/backup/openduet-$(date -u '+%Y%m%dT%H%M%SZ')-$(basename "$DISK")"
-mkdir -p "$backup_dir"
+BACKUP_DIR="$(pwd -P)/backup/openduet-$(date -u '+%Y%m%dT%H%M%SZ')-$(basename "$DISK")"
+mkdir -p "$BACKUP_DIR"
 
 unmount_esp
+
+fstype="$(probe_fstype)"
+case "$fstype" in
+  vfat|fat|msdos) ;;
+  "")
+    if (( RECOVER_FAT32_BACKUP == 1 )) && fat32_sector_valid 6; then
+      warn "Primary FAT32 boot sector is not recognised; valid backup boot sector found at sector 6"
+      dd if="$ESP_PART" of="$BACKUP_DIR/esp-pbr-broken.bin" bs=512 count=1 status=none
+      dd if="$ESP_PART" of="$BACKUP_DIR/esp-pbr-backup-sector6.bin" bs=512 skip=6 count=1 status=none
+      log "Recovering primary FAT32 boot sector from sector 6"
+      dd if="$BACKUP_DIR/esp-pbr-backup-sector6.bin" of="$ESP_PART" bs=512 count=1 conv=notrunc status=none
+      sync
+      have udevadm && udevadm settle >/dev/null 2>&1 || true
+      fstype="$(probe_fstype)"
+      case "$fstype" in
+        vfat|fat|msdos) log "FAT32 boot-sector recovery succeeded" ;;
+        *) die "Backup boot sector was written but FAT is still not recognised; backups are in $BACKUP_DIR" ;;
+      esac
+    elif (( RECOVER_FAT32_BACKUP == 1 )); then
+      die "ESP is not recognised as FAT and sector 6 is not a valid FAT32 backup boot sector; no recovery write performed"
+    else
+      die "ESP is not FAT: $ESP_PART. If this follows the known broken upstream BootInstallBase.sh run, retry with --recover-fat32-backup"
+    fi
+    ;;
+  *) die "ESP is not FAT: $ESP_PART ($fstype)" ;;
+esac
 
 # Capture both sectors before touching the disk. This avoids the upstream
 # BootInstallBase.sh race where writing boot0 may temporarily make /dev/sdX1
 # disappear before the original FAT PBR can be read.
-dd if="$DISK" of="$backup_dir/mbr-before.bin" bs=512 count=1 status=none
-dd if="$ESP_PART" of="$backup_dir/esp-pbr-before.bin" bs=512 count=1 status=none
-cp "$backup_dir/esp-pbr-before.bin" "$TMP/origbs"
+dd if="$DISK" of="$BACKUP_DIR/mbr-before.bin" bs=512 count=1 status=none
+dd if="$ESP_PART" of="$BACKUP_DIR/esp-pbr-before.bin" bs=512 count=1 status=none
+cp "$BACKUP_DIR/esp-pbr-before.bin" "$TMP/origbs"
 cp "$OD/boot1f32" "$TMP/newbs"
 
 # Preserve FAT BPB/EBPB bytes 3..89 exactly as OpenCorePkg's upstream script does.
@@ -136,20 +181,20 @@ dd if="$TMP/origbs" of="$TMP/newbs" skip=3 seek=3 bs=1 count=87 conv=notrunc sta
 # Upstream randomises bytes 496..509 in the generated PBR.
 dd if=/dev/urandom of="$TMP/newbs" skip=496 seek=496 bs=1 count=14 conv=notrunc status=none
 
-log "Backup saved to $backup_dir"
+log "Backup saved to $BACKUP_DIR"
 log "Writing OpenDuet boot0 to first 446 bytes of $DISK"
 dd if="$OD/boot0" of="$DISK" bs=1 count=446 conv=notrunc status=none
 sync
 have udevadm && udevadm settle >/dev/null 2>&1 || true
 
-wait_for_partition || die "$ESP_PART did not return after MBR update; backups are in $backup_dir"
+wait_for_partition || die "$ESP_PART did not return after MBR update; backups are in $BACKUP_DIR"
 unmount_esp
 
 log "Writing OpenDuet FAT PBR to $ESP_PART"
 dd if="$TMP/newbs" of="$ESP_PART" bs=512 count=1 conv=notrunc status=none
 sync
 have udevadm && udevadm settle >/dev/null 2>&1 || true
-wait_for_partition || die "$ESP_PART disappeared after PBR write; backups are in $backup_dir"
+wait_for_partition || die "$ESP_PART disappeared after PBR write; backups are in $BACKUP_DIR"
 
 mount -t vfat -o rw,noatime "$ESP_PART" "$MOUNT_DIR"
 cp --no-preserve=ownership,mode,timestamps "$BOOT_FILE" "$MOUNT_DIR/boot"
