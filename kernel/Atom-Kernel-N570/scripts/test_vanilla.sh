@@ -26,13 +26,16 @@ case "$DESC" in
   *) die "kernel has no i386 architecture" ;;
 esac
 
-if grep -a -q 'xnu-1504\.3\.12' "$KERNEL"; then
+# Use fixed-string matching here. The previous BRE pattern accidentally used
+# double backslashes inside single quotes and therefore looked for literal
+# backslashes instead of the dots in xnu-1504.3.12.
+if grep -a -F -q 'xnu-1504.3.12' "$KERNEL"; then
   log "PASS xnu-1504.3.12 version string"
 else
   die "xnu-1504.3.12 version string not found"
 fi
 
-if grep -a -q 'Darwin Kernel Version 10\.3\.0' "$KERNEL"; then
+if grep -a -F -q 'Darwin Kernel Version 10.3.0' "$KERNEL"; then
   log "PASS Darwin 10.3.0 version string"
 else
   log "NOTE exact Darwin banner not found in raw binary; xnu version string matched"
