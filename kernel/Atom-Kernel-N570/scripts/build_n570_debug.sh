@@ -35,16 +35,19 @@ grep -F -q '[N570 ATOM-KERNEL]' "$SRC_DIR/osfmk/i386/i386_init.c" || die "N570 d
 
 if [ ! -x "$BUILD_TOOLS_BIN/relpath" ] || \
    [ ! -x "$BUILD_TOOLS_BIN/decomment" ] || \
-   [ ! -x "$BUILD_TOOLS_BIN/setsegname" ]; then
-  log "Darwin build helpers missing; bootstrapping relpath/decomment/setsegname"
+   [ ! -x "$BUILD_TOOLS_BIN/setsegname" ] || \
+   [ ! -x "$BUILD_TOOLS_BIN/kextsymboltool" ]; then
+  log "Darwin build helpers missing; bootstrapping relpath/decomment/setsegname/kextsymboltool"
   bash "$SCRIPT_DIR/bootstrap_snowleopard_build_tools.sh"
 fi
 RELPATH_TOOL="$BUILD_TOOLS_BIN/relpath"
 DECOMMENT_TOOL="$BUILD_TOOLS_BIN/decomment"
 SETSEGNAME_TOOL="$BUILD_TOOLS_BIN/setsegname"
+KEXTSYMBOLTOOL_TOOL="$BUILD_TOOLS_BIN/kextsymboltool"
 [ -x "$RELPATH_TOOL" ] || die "relpath helper missing after bootstrap: $RELPATH_TOOL"
 [ -x "$DECOMMENT_TOOL" ] || die "decomment helper missing after bootstrap: $DECOMMENT_TOOL"
 [ -x "$SETSEGNAME_TOOL" ] || die "setsegname helper missing after bootstrap: $SETSEGNAME_TOOL"
+[ -x "$KEXTSYMBOLTOOL_TOOL" ] || die "kextsymboltool helper missing after bootstrap: $KEXTSYMBOLTOOL_TOOL"
 
 # Preserve failed DEBUG intermediates for quick iteration. Use CLEAN_BUILD=1
 # when changing compiler flags/toolchain assumptions and a full rebuild is wanted.
@@ -81,6 +84,7 @@ log "MAKEJOBS: $JOBS"
 log "relpath: $RELPATH_TOOL"
 log "decomment: $DECOMMENT_TOOL"
 log "setsegname: $SETSEGNAME_TOOL"
+log "kextsymboltool: $KEXTSYMBOLTOOL_TOOL"
 
 cd "$SRC_DIR"
 make \
@@ -93,6 +97,7 @@ make \
   RELPATH="$RELPATH_TOOL" \
   DECOMMENT="$DECOMMENT_TOOL" \
   SEG_HACK="$SETSEGNAME_TOOL" \
+  KEXT_CREATE_SYMBOL_SET="$KEXTSYMBOLTOOL_TOOL" \
   MAKEJOBS="$JOBS" \
   exporthdrs all
 
