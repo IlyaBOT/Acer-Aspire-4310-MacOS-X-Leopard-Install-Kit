@@ -3,25 +3,45 @@ set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd -P)"
 ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd -P)"
+LOCK_FILE="$ROOT_DIR/SOURCE.lock"
 SRC_DIR="$ROOT_DIR/src/xnu"
 KERNEL="${1:-$ROOT_DIR/artifacts/n570-debug/mach_kernel}"
 SYMBOL_IMAGE="$ROOT_DIR/artifacts/n570-debug/mach_kernel.sys"
+
+# shellcheck disable=SC1090
+. "$LOCK_FILE"
 
 log() { printf '[atom-kernel-debug-test] %s\n' "$*"; }
 die() { printf '[atom-kernel-debug-test] ERROR: %s\n' "$*" >&2; exit 1; }
 have() { command -v "$1" >/dev/null 2>&1; }
 
 [ -f "$KERNEL" ] || die "kernel not found: $KERNEL"
+[ -f "$SRC_DIR/.xnu-source-commit" ] || die "source marker missing"
+[ "$(cat "$SRC_DIR/.xnu-source-commit")" = "$XNU_COMMIT" ] || die "source commit marker mismatch"
+
+MASTER_VERSION="$(sed -n '1p' "$SRC_DIR/config/MasterVersion" | tr -d '\r\n')"
+[ "$MASTER_VERSION" = "$DARWIN_VERSION" ] || die "MasterVersion mismatch: expected $DARWIN_VERSION, got $MASTER_VERSION"
+
 DESC="$(file "$KERNEL")"
 printf '%s\n' "$DESC"
 case "$DESC" in *i386*) ;; *) die "kernel has no i386 architecture" ;; esac
 
-grep -a -F -q 'xnu-1504.3.12' "$KERNEL" || die "xnu-1504.3.12 version string not found"
+EXPECTED_BANNER="Darwin Kernel Version $DARWIN_VERSION"
+grep -a -F -q "$EXPECTED_BANNER" "$KERNEL" || die "runtime kernel banner not found: $EXPECTED_BANNER"
+log "PASS runtime kernel banner: $EXPECTED_BANNER"
+
+if grep -a -F -q "$XNU_VERSION" "$KERNEL"; then
+  log "INFO Apple OSS package label is also embedded: $XNU_VERSION"
+else
+  log "INFO $XNU_VERSION is not embedded in this local build; provenance is verified from the pinned source commit"
+fi
+
 grep -a -F -q '[N570 ATOM-KERNEL]' "$KERNEL" || die "N570 debug prefix not found in built kernel"
 grep -q 'CPUID_MODEL_ATOM' "$SRC_DIR/osfmk/i386/cpuid.h" || die "Atom model constant missing"
 grep -q 'case CPUID_MODEL_ATOM:' "$SRC_DIR/osfmk/i386/cpuid.c" || die "Atom acceptance case missing"
 grep -A2 'case CPUID_MODEL_ATOM:' "$SRC_DIR/osfmk/i386/cpuid.c" | grep -q 'CPUFAMILY_INTEL_6_13' || die "Atom is not mapped to CPUFAMILY_INTEL_6_13"
 
+log "PASS source provenance: $XNU_VERSION / commit $XNU_COMMIT"
 log "PASS Atom model 28 is represented explicitly in source"
 log "PASS Atom model is accepted without rewriting cpuid_model to Merom 15"
 log "PASS debug prefix is embedded in kernel"
