@@ -36,7 +36,10 @@ kernel/Atom-Kernel-N570/
 │   ├── build_vanilla.sh             # Snow Leopard/Xcode 3.2 I386 RELEASE build
 │   ├── test_vanilla.sh              # Mach-O/version/symbol/source checks
 │   ├── run_vanilla_pipeline.sh      # bootstrap + audit + build + validation
-│   ├── stage_kernel.sh              # copy test kernel to mounted ESP
+│   ├── apply_n570_atom_debug_patch.py # source-level model 28 + debug checkpoints
+│   ├── build_n570_debug.sh          # I386 DEBUG build after patching
+│   ├── test_n570_debug.sh           # patched kernel validation
+│   ├── stage_kernel.sh              # copy a test kernel to mounted ESP
 │   ├── prepare_qemu_image_linux.sh  # clone known-good USB and stage kernel
 │   └── qemu_boot.sh                 # legacy BIOS/OpenDuet QEMU smoke boot
 ├── patches/
@@ -139,18 +142,114 @@ Environment overrides are supported:
 QEMU_CPU=Penryn QEMU_MEM=2048 QEMU_SMP=2 bash scripts/qemu_boot.sh test.raw
 ```
 
-## Phase 3: N570 patching
+After the Penryn control succeeds, the same vanilla kernel can be used for an Atom-negative control:
 
-Only after the vanilla artifact is known-good do we modify XNU. Initial source analysis is in `ANALYSIS.md`.
-
-The first likely patch area is CPU identification in:
-
-```text
-osfmk/i386/cpuid.c
-osfmk/i386/cpuid.h
+```bash
+QEMU_CPU='n270,+lm,+nx' QEMU_MEM=2048 QEMU_SMP=4 bash scripts/qemu_boot.sh test.raw
 ```
 
-The existing six-byte binary patch is deliberately **not** applied to the source tree. Its behavior is documented in `ANALYSIS.md` so it can be replaced by an explicit source-level implementation instead of globally falsifying the CPU model.
+The N270 CPU model has the same Intel family 6 / model 28 identity relevant to the XNU Atom whitelist. It is not a complete emulation of Pineview/NM10 or the ASUS motherboard. `+lm,+nx` makes the CPU-side test closer to the 64-bit-capable N570 while still booting the I386 kernel. Capture the QEMU serial log under `artifacts/qemu/`.
+
+## Phase 3: source-level N570 bring-up patch
+
+Only after the vanilla Penryn control boot succeeds, apply the first Atom patch locally:
+
+```bash
+python scripts/apply_n570_atom_debug_patch.py
+```
+
+On Snow Leopard the system Python 2.6 is sufficient; the helper is deliberately Python 2/3 compatible.
+
+Review the change before building:
+
+```bash
+git diff -- src/xnu/osfmk/i386/cpuid.h \
+            src/xnu/osfmk/i386/cpuid.c \
+            src/xnu/osfmk/i386/i386_init.c
+```
+
+The first patch does three things only:
+
+1. restores the explicit `CPUID_MODEL_ATOM = 28` definition;
+2. accepts model 28 in `cpuid_set_cpufamily()` while preserving `cpuid_model == 28`;
+3. adds early/late bring-up checkpoints using the mandatory `[N570 ATOM-KERNEL]` prefix.
+
+For the initial bring-up hypothesis, Atom is mapped to `CPUFAMILY_INTEL_6_13`. This follows historical XNU-derived Atom handling and avoids lying that the CPU itself is Merom model 15. It is a hypothesis to validate, not the final semantic model.
+
+Build the instrumented DEBUG I386 kernel:
+
+```bash
+bash scripts/build_n570_debug.sh
+bash scripts/test_n570_debug.sh artifacts/n570-debug/mach_kernel
+```
+
+Expected artifact:
+
+```text
+artifacts/n570-debug/mach_kernel
+```
+
+Symbols, when produced, are retained as:
+
+```text
+artifacts/n570-debug/mach_kernel.sys
+artifacts/n570-debug/mach_kernel.dSYM
+```
+
+### QEMU Atom-profile test
+
+Stage the patched kernel into a copy of the test image ESP, then boot with the Atom-like CPU profile:
+
+```bash
+QEMU_CPU='n270,+lm,+nx' QEMU_MEM=2048 QEMU_SMP=4 \
+  bash scripts/qemu_boot.sh /path/to/patched-test.raw
+```
+
+Look for messages such as:
+
+```text
+[N570 ATOM-KERNEL] vstart: entered ...
+[N570 ATOM-KERNEL] i386_init: before cpu_init
+[N570 ATOM-KERNEL] i386_init: after cpu_init
+[N570 ATOM-KERNEL] CPUID ... family=6 model=28 ...
+[N570 ATOM-KERNEL] i386_init: before i386_vm_init ...
+[N570 ATOM-KERNEL] i386_init: after tsc_init
+```
+
+The last emitted marker is the first coarse localization of an early boot failure.
+
+## Phase 4: real ASUS Eee PC 1215P test
+
+Keep the vanilla kernel and current known kernel backed up. Mount the actual USB ESP and stage the patched DEBUG kernel:
+
+```bash
+bash scripts/stage_kernel.sh artifacts/n570-debug/mach_kernel /path/to/mounted/ESP
+```
+
+Keep OpenCore on:
+
+```text
+KernelArch = i386
+CustomKernel = true
+```
+
+Use verbose/debug boot arguments. Do not change unrelated OpenCore quirks in the same test. Boot the ASUS and record the last visible `[N570 ATOM-KERNEL]` marker. If the physical machine fails earlier than QEMU, compare CPU feature leaves/MSRs, APIC/TSC behavior, ACPI and memory-map differences next.
+
+To restore the source tree after an experiment:
+
+```bash
+git restore src/xnu/osfmk/i386/cpuid.h \
+            src/xnu/osfmk/i386/cpuid.c \
+            src/xnu/osfmk/i386/i386_init.c
+```
+
+On older Git versions without `git restore`:
+
+```bash
+git checkout -- src/xnu/osfmk/i386/cpuid.h \
+                src/xnu/osfmk/i386/cpuid.c \
+                src/xnu/osfmk/i386/i386_init.c
+```
 
 ## Rules
 
