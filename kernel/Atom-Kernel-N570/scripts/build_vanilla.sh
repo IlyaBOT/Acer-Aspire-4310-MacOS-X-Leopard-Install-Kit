@@ -34,17 +34,20 @@ if grep -R -F -q '[N570 ATOM-KERNEL]' "$SRC_DIR" 2>/dev/null; then
 fi
 
 # XNU 1504 expects Darwin-internal build tools that are not included in a
-# normal Xcode 3.2 installation. In particular MakeInc.cmd asks xcrun to find
-# relpath and hardcodes /usr/local/bin/decomment. Build pinned bootstrap_cmds-72
-# copies locally and pass them to make explicitly instead of modifying /usr/local.
-if [ ! -x "$BUILD_TOOLS_BIN/relpath" ] || [ ! -x "$BUILD_TOOLS_BIN/decomment" ]; then
-  log "Darwin build helpers missing; bootstrapping bootstrap_cmds-72 relpath/decomment"
+# normal Xcode 3.2 installation. Keep local pinned copies instead of modifying
+# /usr/local or /Developer.
+if [ ! -x "$BUILD_TOOLS_BIN/relpath" ] || \
+   [ ! -x "$BUILD_TOOLS_BIN/decomment" ] || \
+   [ ! -x "$BUILD_TOOLS_BIN/setsegname" ]; then
+  log "Darwin build helpers missing; bootstrapping relpath/decomment/setsegname"
   bash "$SCRIPT_DIR/bootstrap_snowleopard_build_tools.sh"
 fi
 RELPATH_TOOL="$BUILD_TOOLS_BIN/relpath"
 DECOMMENT_TOOL="$BUILD_TOOLS_BIN/decomment"
+SETSEGNAME_TOOL="$BUILD_TOOLS_BIN/setsegname"
 [ -x "$RELPATH_TOOL" ] || die "relpath helper missing after bootstrap: $RELPATH_TOOL"
 [ -x "$DECOMMENT_TOOL" ] || die "decomment helper missing after bootstrap: $DECOMMENT_TOOL"
+[ -x "$SETSEGNAME_TOOL" ] || die "setsegname helper missing after bootstrap: $SETSEGNAME_TOOL"
 
 rm -rf "$WORK_DIR" "$ARTIFACT_DIR"
 mkdir -p "$WORK_DIR/obj" "$WORK_DIR/sym" "$WORK_DIR/dst" "$ARTIFACT_DIR"
@@ -74,6 +77,7 @@ log "configuration: RELEASE I386"
 log "MAKEJOBS: $JOBS"
 log "relpath: $RELPATH_TOOL"
 log "decomment: $DECOMMENT_TOOL"
+log "setsegname: $SETSEGNAME_TOOL"
 
 cd "$SRC_DIR"
 make \
@@ -85,6 +89,7 @@ make \
   DSTROOT="$DSTROOT" \
   RELPATH="$RELPATH_TOOL" \
   DECOMMENT="$DECOMMENT_TOOL" \
+  SEG_HACK="$SETSEGNAME_TOOL" \
   MAKEJOBS="$JOBS" \
   exporthdrs all
 
