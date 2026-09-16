@@ -19,6 +19,11 @@ have() { command -v "$1" >/dev/null 2>&1; }
 [ -f "$SRC_DIR/.xnu-source-commit" ] || die "source marker missing"
 [ "$(cat "$SRC_DIR/.xnu-source-commit")" = "$XNU_COMMIT" ] || die "source commit marker mismatch"
 
+MASTER_VERSION="$(sed -n '1p' "$SRC_DIR/config/MasterVersion" | tr -d '\r\n')"
+[ "$MASTER_VERSION" = "$DARWIN_VERSION" ] || die "MasterVersion mismatch: expected $DARWIN_VERSION, got $MASTER_VERSION"
+log "PASS source provenance: $XNU_VERSION / commit $XNU_COMMIT"
+log "PASS source MasterVersion: Darwin $DARWIN_VERSION"
+
 DESC="$(file "$KERNEL")"
 printf '%s\n' "$DESC"
 case "$DESC" in
@@ -26,19 +31,21 @@ case "$DESC" in
   *) die "kernel has no i386 architecture" ;;
 esac
 
-# Use fixed-string matching here. The previous BRE pattern accidentally used
-# double backslashes inside single quotes and therefore looked for literal
-# backslashes instead of the dots in xnu-1504.3.12.
-if grep -a -F -q 'xnu-1504.3.12' "$KERNEL"; then
-  log "PASS xnu-1504.3.12 version string"
+# XNU_VERSION is the Apple OSS source-package label. Local open-source builds
+# are not required to embed that label in mach_kernel. The runtime version is
+# generated from config/MasterVersion by config/newvers.pl and compiled through
+# config/version.c as "Darwin Kernel Version <version>...".
+EXPECTED_BANNER="Darwin Kernel Version $DARWIN_VERSION"
+if grep -a -F -q "$EXPECTED_BANNER" "$KERNEL"; then
+  log "PASS runtime kernel banner: $EXPECTED_BANNER"
 else
-  die "xnu-1504.3.12 version string not found"
+  die "runtime kernel banner not found: $EXPECTED_BANNER"
 fi
 
-if grep -a -F -q 'Darwin Kernel Version 10.3.0' "$KERNEL"; then
-  log "PASS Darwin 10.3.0 version string"
+if grep -a -F -q "$XNU_VERSION" "$KERNEL"; then
+  log "INFO Apple OSS package label is also embedded: $XNU_VERSION"
 else
-  log "NOTE exact Darwin banner not found in raw binary; xnu version string matched"
+  log "INFO $XNU_VERSION is not embedded in this local build; provenance is verified from the pinned source commit"
 fi
 
 if grep -a -F -q '[N570 ATOM-KERNEL]' "$KERNEL"; then
