@@ -46,7 +46,13 @@ SETSEGNAME_TOOL="$BUILD_TOOLS_BIN/setsegname"
 [ -x "$DECOMMENT_TOOL" ] || die "decomment helper missing after bootstrap: $DECOMMENT_TOOL"
 [ -x "$SETSEGNAME_TOOL" ] || die "setsegname helper missing after bootstrap: $SETSEGNAME_TOOL"
 
-rm -rf "$WORK_DIR" "$ARTIFACT_DIR"
+# Preserve failed DEBUG intermediates for quick iteration. Use CLEAN_BUILD=1
+# when changing compiler flags/toolchain assumptions and a full rebuild is wanted.
+if [ "${CLEAN_BUILD:-0}" = "1" ]; then
+  log "CLEAN_BUILD=1: removing previous N570 DEBUG work tree"
+  rm -rf "$WORK_DIR"
+fi
+rm -rf "$ARTIFACT_DIR"
 mkdir -p "$WORK_DIR/obj" "$WORK_DIR/sym" "$WORK_DIR/dst" "$ARTIFACT_DIR"
 
 export SRCROOT="$SRC_DIR"
