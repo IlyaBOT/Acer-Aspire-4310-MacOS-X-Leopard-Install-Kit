@@ -1,0 +1,46 @@
+name: Validate Atom N570 kernel workspace
+
+on:
+  push:
+    branches:
+      - Atom-Kernel-N570
+    paths:
+      - kernel/Atom-Kernel-N570/**
+      - .github/workflows/atom-kernel-n570-lint.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate-workspace:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: Atom-Kernel-N570
+
+      - name: Validate shell syntax
+        shell: bash
+        run: |
+          set -euo pipefail
+          for script in kernel/Atom-Kernel-N570/scripts/*.sh; do
+            echo "bash -n $script"
+            bash -n "$script"
+          done
+
+      - name: Verify pinned source and vanilla assumptions
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash kernel/Atom-Kernel-N570/scripts/audit_source.sh
+
+      - name: Verify required workspace files
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f kernel/Atom-Kernel-N570/src/xnu/APPLE_LICENSE
+          test -f kernel/Atom-Kernel-N570/src/xnu/README
+          test -f kernel/Atom-Kernel-N570/src/xnu/osfmk/i386/cpuid.c
+          test -f kernel/Atom-Kernel-N570/src/xnu/osfmk/i386/i386_init.c
+          test "$(cat kernel/Atom-Kernel-N570/src/xnu/.xnu-source-commit)" = "902cc0cd840e5c2a7b111bc1781e3c0625ebff5c"
