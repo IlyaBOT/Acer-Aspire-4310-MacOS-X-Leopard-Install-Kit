@@ -279,7 +279,7 @@ bootdrv db 0
 msg db 13,10,'D640 MBR ${tag}-${mode}',13,10,0
 noactive db 'NO ACTIVE PARTITION',13,10,0
 diskerr db 'INT13 READ ERROR',13,10,0
-times 446-($-$$) db 0
+times 446-(\$-\$\$) db 0
 ASM
   nasm -f bin "$TMP/mbr-chain.asm" -o "$out"
   [[ "$(stat -c %s "$out")" -eq 446 ]] || die "Internal error: chain MBR is not 446 bytes"
@@ -319,6 +319,13 @@ ASM
   local max=$((510 - offset)) actual
   actual="$(stat -c %s "$out")"
   (( actual <= max )) || die "Internal error: PBR code too large ($actual > $max)"
+}
+
+preflight_asm() {
+  compile_direct_mbr "$TMP/preflight-direct.bin"
+  compile_chain_mbr "$TMP/preflight-lba.bin" SELFTEST lba
+  compile_chain_mbr "$TMP/preflight-chs.bin" SELFTEST chs
+  compile_pbr_code 62 "$TMP/preflight-pbr.bin" SELFTEST
 }
 
 write_mbr_code() {
@@ -372,6 +379,7 @@ setup_partitioned() {
   write_mbr_code "$TMP/mbr.bin"
 }
 
+preflight_asm
 confirm_erase
 
 case "$CASE_ID" in

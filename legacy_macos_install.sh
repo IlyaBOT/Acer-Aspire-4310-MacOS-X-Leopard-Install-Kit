@@ -3,9 +3,12 @@ set -Eeuo pipefail
 
 ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 PROFILES_DIR="$ROOT_DIR/profiles"
+OC_SELECTOR="$ROOT_DIR/scripts/select_opencore_release.sh"
 TARGET=""
 OS_PROFILE=""
 USB_PROBE=0
+OPENCORE_VERSION=""
+OPENCORE_VARIANT=""
 FORWARD=()
 
 usage() {
@@ -22,6 +25,20 @@ Usage:
   ./legacy_macos_install.sh --target emachines-d640-n930 --os snowleopard --make-usb --disk /dev/sdX --retail /path/to.iso
   ./legacy_macos_install.sh --target asus-eee-pc-1215p --os snowleopard --doctor
   ./legacy_macos_install.sh --target asus-eee-pc-1215p --os lion --doctor
+
+OpenCore release selection for implemented IA32/OpenDuet profiles:
+  ./legacy_macos_install.sh --target emachines-d640-n930 --download \
+    --opencore-version 1.0.2 --opencore-variant debug
+  ./legacy_macos_install.sh --target asus-eee-pc-1215p --build \
+    --opencore-version 1.0.2 --opencore-variant release
+
+  --opencore-version latest|X.Y.Z   select a specific OpenCore release
+  --opencore-variant debug|release  select DEBUG or RELEASE archive; default DEBUG
+
+A custom release requested together with --download/--download-only is cached
+under cache/opencore/<version>/<variant> after the target's normal dependency
+preparation, then becomes the selected OpenCore source. For other operations the
+requested release must already be cached. Aliases: --oc-version, --oc-variant.
 
 Discovery:
   ./legacy_macos_install.sh --list-targets
@@ -40,7 +57,8 @@ Acer entry point ./prepare_aspire4310_macos.sh remains supported unchanged.
 
 Profiles marked 'experimental' have a build/media implementation but still need
 physical bring-up. Profiles marked 'planned' are metadata/documentation only;
-build and destructive operations are rejected for them.
+build and destructive operations are rejected for them. A target may also carry
+a hardware-test blocker even when its tooling remains available for research.
 EOF
 }
 
@@ -75,6 +93,45 @@ list_profiles() {
   done
 }
 
+has_forward_arg() {
+  local wanted="$1" arg
+  for arg in "${FORWARD[@]}"; do
+    [[ "$arg" == "$wanted" ]] && return 0
+  done
+  return 1
+}
+
+forward_requests_download() {
+  has_forward_arg --download || has_forward_arg --download-only
+}
+
+normalize_oc_variant() {
+  local value
+  value="$(printf '%s' "$1" | tr '[:lower:]' '[:upper:]')"
+  case "$value" in
+    DEBUG|RELEASE) printf '%s\n' "$value" ;;
+    *) die "--opencore-variant must be debug or release" ;;
+  esac
+}
+
+opencore_override_requested() {
+  [[ -n "$OPENCORE_VERSION" || -n "$OPENCORE_VARIANT" ]]
+}
+
+prepare_cached_opencore_selection() {
+  local version="${OPENCORE_VERSION:-latest}" variant
+  variant="$(normalize_oc_variant "${OPENCORE_VARIANT:-DEBUG}")"
+  [[ -f "$OC_SELECTOR" ]] || die "OpenCore selector is missing: $OC_SELECTOR"
+  bash "$OC_SELECTOR" --select-only --version "$version" --variant "$variant"
+}
+
+download_and_select_opencore() {
+  local version="${OPENCORE_VERSION:-latest}" variant
+  variant="$(normalize_oc_variant "${OPENCORE_VARIANT:-DEBUG}")"
+  [[ -f "$OC_SELECTOR" ]] || die "OpenCore selector is missing: $OC_SELECTOR"
+  bash "$OC_SELECTOR" --download --version "$version" --variant "$variant"
+}
+
 if [[ $# -eq 0 ]]; then
   usage
   exit 1
@@ -84,6 +141,8 @@ while (($#)); do
   case "$1" in
     --target) need_value "$@"; shift; TARGET="$1" ;;
     --os) need_value "$@"; shift; OS_PROFILE="$1" ;;
+    --opencore-version|--oc-version) need_value "$@"; shift; OPENCORE_VERSION="$1" ;;
+    --opencore-variant|--oc-variant) need_value "$@"; shift; OPENCORE_VARIANT="$1" ;;
     --usb-probe) USB_PROBE=1 ;;
     --list-targets) list_targets; exit 0 ;;
     --list-profiles)
@@ -105,6 +164,7 @@ esac
 
 if (( USB_PROBE == 1 )); then
   [[ "$TARGET" == "emachines-d640-n930" ]] || die "--usb-probe is currently defined only for emachines-d640-n930"
+  opencore_override_requested && die "OpenCore version selection does not apply to --usb-probe"
   exec bash "$ROOT_DIR/scripts/d640_usb_boot_probe.sh" "${FORWARD[@]}"
 fi
 
@@ -136,10 +196,22 @@ if [[ "${PROFILE_STATUS:-supported}" == "planned" ]]; then
   die "$TARGET/$OS_PROFILE is a planned profile. Recovery/installer architecture is documented, but build/USB operations are disabled until hardware-specific kernel/kext validation is complete."
 fi
 
+run_with_optional_opencore_selection() {
+  if opencore_override_requested; then
+    if forward_requests_download; then
+      "$@"
+      download_and_select_opencore
+      return
+    fi
+    prepare_cached_opencore_selection
+  fi
+  exec "$@"
+}
+
 case "$TARGET:$OS_PROFILE" in
   acer-aspire-4310:leopard|acer-aspire-4310:snowleopard)
     log "target=$TARGET os=$OS_PROFILE engine=prepare_aspire4310_macos.sh"
-    exec "$ROOT_DIR/prepare_aspire4310_macos.sh" --os "$OS_PROFILE" "${FORWARD[@]}"
+    run_with_optional_opencore_selection "$ROOT_DIR/prepare_aspire4310_macos.sh" --os "$OS_PROFILE" "${FORWARD[@]}"
     ;;
   emachines-d640-n930:snowleopard)
     D640_ARGS=()
@@ -149,12 +221,12 @@ case "$TARGET:$OS_PROFILE" in
         *) D640_ARGS+=("$arg") ;;
       esac
     done
-    log "target=$TARGET os=$OS_PROFILE engine=prepare_emachines_d640_snowleopard.sh"
-    exec "$ROOT_DIR/scripts/prepare_emachines_d640_snowleopard.sh" "${D640_ARGS[@]}"
+    log "target=$TARGET os=$OS_PROFILE engine=prepare_emachines_d640_snowleopard.sh status=${PROFILE_STATUS:-experimental} hardware=${HARDWARE_TEST_STATUS:-unknown}"
+    run_with_optional_opencore_selection "$ROOT_DIR/scripts/prepare_emachines_d640_snowleopard.sh" "${D640_ARGS[@]}"
     ;;
   asus-eee-pc-1215p:snowleopard)
     log "target=$TARGET os=$OS_PROFILE engine=prepare_asus_1215p_snowleopard.sh status=${PROFILE_STATUS:-experimental}"
-    exec bash "$ROOT_DIR/scripts/prepare_asus_1215p_snowleopard.sh" "${FORWARD[@]}"
+    run_with_optional_opencore_selection bash "$ROOT_DIR/scripts/prepare_asus_1215p_snowleopard.sh" "${FORWARD[@]}"
     ;;
   *) die "no implementation engine is enabled for $TARGET/$OS_PROFILE" ;;
 esac

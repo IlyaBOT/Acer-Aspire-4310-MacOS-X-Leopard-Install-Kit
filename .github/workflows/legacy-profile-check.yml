@@ -4,15 +4,17 @@ on:
   push:
     branches:
       - main
-      - feature/emachines-d640-linux
     paths:
       - 'legacy_macos_install.sh'
       - 'prepare_aspire4310_macos.sh'
       - 'profiles/**'
       - 'targets/**'
+      - 'docs/**'
       - 'scripts/collect_linux_hardware_v2.sh'
       - 'scripts/prepare_emachines_d640_snowleopard.sh'
+      - 'scripts/linux_make_usb.sh'
       - 'scripts/d640_usb_boot_probe.sh'
+      - 'scripts/select_opencore_release.sh'
       - 'scripts/prepare_asus_1215p_snowleopard.sh'
       - 'scripts/patch_asus_1215p_oc_config.py'
       - 'scripts/fetch_atom_1063_kernel.sh'
@@ -23,12 +25,16 @@ on:
       - 'prepare_aspire4310_macos.sh'
       - 'profiles/**'
       - 'targets/**'
+      - 'docs/**'
       - 'scripts/collect_linux_hardware_v2.sh'
       - 'scripts/prepare_emachines_d640_snowleopard.sh'
+      - 'scripts/linux_make_usb.sh'
       - 'scripts/d640_usb_boot_probe.sh'
+      - 'scripts/select_opencore_release.sh'
       - 'scripts/prepare_asus_1215p_snowleopard.sh'
       - 'scripts/patch_asus_1215p_oc_config.py'
       - 'scripts/fetch_atom_1063_kernel.sh'
+      - '.github/workflows/legacy-profile-check.yml'
   workflow_dispatch:
 
 jobs:
@@ -43,7 +49,9 @@ jobs:
           bash -n prepare_aspire4310_macos.sh
           bash -n scripts/collect_linux_hardware_v2.sh
           bash -n scripts/prepare_emachines_d640_snowleopard.sh
+          bash -n scripts/linux_make_usb.sh
           bash -n scripts/d640_usb_boot_probe.sh
+          bash -n scripts/select_opencore_release.sh
           bash -n scripts/prepare_asus_1215p_snowleopard.sh
           bash -n scripts/fetch_atom_1063_kernel.sh
           python3 -m py_compile scripts/patch_asus_1215p_oc_config.py
@@ -58,6 +66,9 @@ jobs:
           test -f profiles/emachines-d640-n930/lion/profile.conf
           test -f profiles/emachines-d640-n930/mountainlion/profile.conf
           test -f profiles/emachines-d640-n930/mavericks/profile.conf
+          test -f docs/AMD_SNOW_LEOPARD_KERNELS.md
+          test -f docs/EMACHINES_D640_HARDWARE_SNAPSHOT.md
+          test -f docs/EMACHINES_D640_LINUX.md
           test -f profiles/asus-eee-pc-1215p/README.md
           test -f profiles/asus-eee-pc-1215p/AUDIT.md
           test -f profiles/asus-eee-pc-1215p/hardware.conf
@@ -70,11 +81,51 @@ jobs:
         run: |
           ./legacy_macos_install.sh --list-targets
           ./legacy_macos_install.sh --list-profiles
+          ./legacy_macos_install.sh --help | grep -q -- '--opencore-version'
           ./legacy_macos_install.sh --target acer-aspire-4310 --os lion --doctor
+          ./legacy_macos_install.sh --target emachines-d640-n930 --os snowleopard --help
           ./legacy_macos_install.sh --target emachines-d640-n930 --os lion --doctor
           ./legacy_macos_install.sh --target asus-eee-pc-1215p --os snowleopard --help
           ./legacy_macos_install.sh --target asus-eee-pc-1215p --os lion --doctor
           ./legacy_macos_install.sh --target emachines-d640-n930 --usb-probe --list
+
+      - name: Validate D640 Linux merge and blocked hardware status
+        run: |
+          grep -q '^PROFILE_STATUS=experimental$' profiles/emachines-d640-n930/snowleopard/profile.conf
+          grep -q '^HARDWARE_TEST_STATUS=blocked$' profiles/emachines-d640-n930/snowleopard/profile.conf
+          grep -q '^HARDWARE_TEST_RESULT="no-known-good-boot"$' profiles/emachines-d640-n930/snowleopard/profile.conf
+          grep -q 'Linux USB-writing backend' README.md
+          grep -q 'Current physical-target status.*blocked' docs/EMACHINES_D640_LINUX.md
+          grep -q '^preflight_asm()' scripts/d640_usb_boot_probe.sh
+          grep -q '^preflight_asm$' scripts/d640_usb_boot_probe.sh
+          grep -Fq 'times 446-(\$-\$\$) db 0' scripts/d640_usb_boot_probe.sh
+          grep -q 'Linux legacy macOS USB backend' scripts/linux_make_usb.sh
+
+      - name: Unit-test cached OpenCore selector without network
+        run: |
+          mkdir -p cache/opencore/0.0.0/DEBUG/Docs \
+                   cache/opencore/0.0.0/DEBUG/IA32/EFI/OC \
+                   cache/opencore/0.0.0/DEBUG/IA32/EFI/BOOT \
+                   cache/opencore/0.0.0/DEBUG/Utilities/LegacyBoot
+          : > cache/opencore/0.0.0/DEBUG/Docs/Sample.plist
+          : > cache/opencore/0.0.0/DEBUG/IA32/EFI/OC/OpenCore.efi
+          : > cache/opencore/0.0.0/DEBUG/IA32/EFI/BOOT/BOOTIA32.efi
+          : > cache/opencore/0.0.0/DEBUG/Utilities/LegacyBoot/bootIA32
+          : > cache/opencore/0.0.0/DEBUG/Utilities/LegacyBoot/boot0
+          : > cache/opencore/0.0.0/DEBUG/Utilities/LegacyBoot/boot1f32
+          cat > cache/current-sources.env <<'EOF'
+          OC_VERSION=old
+          OC_VARIANT=DEBUG
+          OC_CACHE_REL=opencore/old/DEBUG
+          HFS_32_FILE=keep-this-value
+          LEGACY_KEXTS_CACHE_REL=keep-this-too
+          EOF
+          bash scripts/select_opencore_release.sh --select-only --version 0.0.0 --variant debug
+          grep -q '^OC_VERSION=0.0.0$' cache/current-sources.env
+          grep -q '^OC_VARIANT=DEBUG$' cache/current-sources.env
+          grep -q '^OC_CACHE_REL=opencore/0.0.0/DEBUG$' cache/current-sources.env
+          grep -q '^HFS_32_FILE=keep-this-value$' cache/current-sources.env
+          grep -q '^LEGACY_KEXTS_CACHE_REL=keep-this-too$' cache/current-sources.env
 
       - name: Validate audited ASUS 1215P metadata
         run: |
