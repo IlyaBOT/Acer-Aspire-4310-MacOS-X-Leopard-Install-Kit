@@ -4,6 +4,8 @@ param(
     [ValidateSet("vanilla", "atom")]
     [string]$Profile = "vanilla",
     [int]$EspPartitionNumber = 1,
+    [ValidatePattern("^[A-Za-z]$")]
+    [string]$TempDriveLetter,
     [string]$Kernel,
     [string]$Output,
     [switch]$Force
@@ -43,22 +45,56 @@ if (Test-Path $Output) {
 
 $tempLetter = $null
 $letter = $esp.DriveLetter
+
 if (-not $letter) {
-    $used = @(Get-Volume | Where-Object DriveLetter | ForEach-Object { $_.DriveLetter.ToString().ToUpperInvariant() })
-    foreach ($candidate in @("Z","Y","X","W","V","U","T","S","R","Q")) {
-        if ($used -notcontains $candidate) { $tempLetter = $candidate; break }
+    if ($TempDriveLetter) {
+        $candidates = @($TempDriveLetter.ToUpperInvariant())
+    } else {
+        # Mapped/network/SUBST drives can be invisible to Get-Volume,
+        # especially from an elevated shell, while still reserving a letter.
+        # Try each candidate with Set-Partition and catch collisions.
+        $candidates = @("Z","Y","X","W","V","U","T","S","R","Q","P","O","N","M","L","K","J","I","H","G","F","E","D")
     }
-    if (-not $tempLetter) { throw "No free temporary drive letter found for the ESP." }
-    Set-Partition -DiskNumber $DiskNumber -PartitionNumber $EspPartitionNumber -NewDriveLetter $tempLetter | Out-Null
-    $letter = $tempLetter
+
+    foreach ($candidate in $candidates) {
+        try {
+            Set-Partition -DiskNumber $DiskNumber -PartitionNumber $EspPartitionNumber -NewDriveLetter $candidate -ErrorAction Stop | Out-Null
+            $tempLetter = $candidate
+            $letter = $candidate
+            Log "temporarily mounted ESP as ${candidate}:"
+            break
+        }
+        catch {
+            Log "drive ${candidate}: unavailable; trying another letter"
+        }
+    }
+
+    if (-not $letter) {
+        if ($TempDriveLetter) {
+            throw "Requested temporary drive letter ${TempDriveLetter}: is unavailable."
+        }
+        throw "Could not assign any temporary drive letter to the ESP."
+    }
 }
 
 try {
     $espRoot = $letter + ":\"
-    $kernelDir = Join-Path $espRoot "Kernels"
-    $kernelDst = Join-Path $kernelDir "kernel"
-    if (-not (Test-Path $kernelDir -PathType Container)) { throw "Kernels directory not found on ESP: $kernelDir" }
 
+    $ready = $false
+    foreach ($attempt in 1..20) {
+        if (Test-Path $espRoot -PathType Container) { $ready = $true; break }
+        Start-Sleep -Milliseconds 100
+    }
+    if (-not $ready) { throw "ESP drive path did not become available: $espRoot" }
+
+    $ocDir = Join-Path $espRoot "EFI\OC"
+    if (-not (Test-Path $ocDir -PathType Container)) {
+        throw "Mounted partition is not the expected OpenCore ESP: missing $ocDir"
+    }
+
+    $kernelDir = Join-Path $espRoot "Kernels"
+    New-Item -ItemType Directory -Force -Path $kernelDir | Out-Null
+    $kernelDst = Join-Path $kernelDir "kernel"
     if (Test-Path $kernelDst -PathType Leaf) {
         $backup = Join-Path $kernelDir "kernel.before-qemu-prep"
         if (-not (Test-Path $backup)) {
