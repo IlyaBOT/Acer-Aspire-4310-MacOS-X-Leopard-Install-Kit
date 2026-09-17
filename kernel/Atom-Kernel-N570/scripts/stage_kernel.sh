@@ -17,7 +17,7 @@ mkdir -p "$ESP/Kernels"
 
 DESC="$(file "$KERNEL")"
 case "$DESC" in *i386*) ;; *) die "kernel has no i386 architecture: $DESC" ;; esac
-grep -a -q 'xnu-1504\.3\.12' "$KERNEL" || die "kernel is not xnu-1504.3.12"
+grep -a -F -q 'Darwin Kernel Version 10.3.0' "$KERNEL" || die "kernel is not Darwin 10.3.0"
 
 if [ -f "$ESP/Kernels/kernel" ]; then
   stamp="$(date +%Y%m%d-%H%M%S)"
