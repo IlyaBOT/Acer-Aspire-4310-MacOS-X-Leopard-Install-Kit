@@ -138,7 +138,7 @@ log "QEMU log: $QEMU_LOG"
 log "expected guest payload: N570-patched DEBUG Darwin 10.3.0 kernel"
 
 EXTRA_ARGS=()
-if [ -n "$INSTALLER_ISO" ]; then EXTRA_ARGS+=( -drive "file=$INSTALLER_ISO,media=cdrom,if=ide,index=2,readonly=on" ); fi
+if [ -n "$INSTALLER_ISO" ]; then EXTRA_ARGS+=( -cdrom "$INSTALLER_ISO" ); fi
 
 exec "$QEMU_BIN" \
   -name "SnowLeopard-Atom-N570" \
