@@ -29,23 +29,27 @@ kernel/Atom-Kernel-N570/
 ├── ANALYSIS.md
 ├── README.md
 ├── src/
-│   └── xnu/                         # vendored exact xnu-1504.3.12 snapshot
+│   └── xnu/                           # vendored exact xnu-1504.3.12 snapshot
 ├── scripts/
-│   ├── bootstrap_source.sh          # deterministic fallback source fetch
-│   ├── audit_source.sh              # verify exact vanilla source assumptions
-│   ├── build_vanilla.sh             # Snow Leopard/Xcode 3.2 I386 RELEASE build
-│   ├── test_vanilla.sh              # Mach-O/version/symbol/source checks
-│   ├── run_vanilla_pipeline.sh      # bootstrap + audit + build + validation
+│   ├── bootstrap_source.sh            # deterministic fallback source fetch
+│   ├── audit_source.sh                # verify exact vanilla source assumptions
+│   ├── build_vanilla.sh               # Snow Leopard/Xcode 3.2 I386 RELEASE build
+│   ├── test_vanilla.sh                # Mach-O/version/symbol/source checks
+│   ├── run_vanilla_pipeline.sh        # bootstrap + audit + build + validation
 │   ├── apply_n570_atom_debug_patch.py # source-level model 28 + debug checkpoints
-│   ├── build_n570_debug.sh          # I386 DEBUG build after patching
-│   ├── test_n570_debug.sh           # patched kernel validation
-│   ├── stage_kernel.sh              # copy a test kernel to mounted ESP
-│   ├── prepare_qemu_image_linux.sh  # clone known-good USB and stage kernel
-│   └── qemu_boot.sh                 # legacy BIOS/OpenDuet QEMU smoke boot
+│   ├── build_n570_debug.sh            # I386 DEBUG build after patching
+│   ├── test_n570_debug.sh             # patched kernel validation
+│   ├── stage_kernel.sh                # copy a test kernel to mounted ESP
+│   ├── prepare_qemu_image_linux.sh    # clone known-good USB and stage kernel
+│   ├── qemu_boot_vanilla.sh           # Unix/Linux/macOS: Penryn control VM
+│   ├── qemu_boot_atom.sh              # Unix/Linux/macOS: Atom model-28 VM
+│   ├── qemu_boot_vanilla.ps1          # Windows 10/11: Penryn control VM
+│   ├── qemu_boot_atom.ps1             # Windows 10/11: Atom model-28 VM
+│   └── qemu_boot.sh                    # compatibility wrapper -> vanilla profile
 ├── patches/
 │   └── README.md
-├── artifacts/                       # local build products; ignored
-└── work/                            # OBJROOT/SYMROOT/DSTROOT; ignored
+├── artifacts/                         # local build products; ignored
+└── work/                              # OBJROOT/SYMROOT/DSTROOT; ignored
 ```
 
 The source snapshot is committed on the `Atom-Kernel-N570` branch. `bootstrap_source.sh` remains as a deterministic fallback and verifies the same pinned commit.
@@ -101,25 +105,11 @@ bash scripts/test_vanilla.sh \
 
 First validate the self-built vanilla kernel on a CPU model Snow Leopard already supports. Do **not** start by emulating Atom. The control test separates a broken historical build/toolchain from an Atom-specific failure.
 
-### Option A: use an existing raw test-disk image
+### Prepare the boot disk image
 
-Mount its ESP, then stage the kernel:
+The QEMU launchers expect a **whole bootable disk image** containing the same OpenDuet/OpenCore + Snow Leopard boot chain used for the physical machine. The required test kernel must already be staged in its ESP as `Kernels/kernel`.
 
-```bash
-bash scripts/stage_kernel.sh \
-  artifacts/vanilla/mach_kernel \
-  /path/to/mounted/ESP
-```
-
-Boot it:
-
-```bash
-bash scripts/qemu_boot.sh /path/to/test-disk.raw
-```
-
-### Option B: clone the known-good physical USB on Linux
-
-This reads the physical USB and writes only to a new image file:
+On Linux, a known-good physical USB can be cloned and the vanilla kernel staged in one step:
 
 ```bash
 sudo bash scripts/prepare_qemu_image_linux.sh \
@@ -128,27 +118,141 @@ sudo bash scripts/prepare_qemu_image_linux.sh \
   --kernel "$PWD/artifacts/vanilla/mach_kernel"
 ```
 
-Then:
+For the Atom-patched test, make a separate base image and stage `artifacts/n570-debug/mach_kernel` into it. Keeping separate vanilla and Atom base images prevents accidentally testing the wrong kernel.
 
-```bash
-bash scripts/qemu_boot.sh "$PWD/artifacts/qemu/asus1215p-vanilla.raw"
+### VM design
+
+Both platform implementations intentionally use a small deterministic VM by default:
+
+```text
+RAM:       1024 MiB
+vCPU:      1
+Machine:   legacy PC/i440FX-class
+Disk:      IDE
+Graphics:  std VGA
+Input:     USB keyboard + tablet
+Network:   disabled
+Audio:     disabled
+Accel:     TCG
 ```
 
-Default QEMU control CPU is `Penryn`, RAM is 2 GiB, SMP is 2, acceleration is TCG, and guest disk writes are discarded with QEMU snapshot mode. The machine boots through legacy BIOS/OpenDuet rather than native UEFI.
+`q35` is deliberately not the default. The real Eee PC 1215P is Pineview/NM10-era hardware, while Q35/ICH9 is a newer and materially different platform. The QEMU machine is only an early-XNU/CPU control environment; it is not intended to reproduce the ASUS board 1:1.
 
-Environment overrides are supported:
+TCG is also deliberate. It keeps QEMU in control of the guest CPUID model on Linux, macOS and Windows. KVM/WHPX can be enabled manually, but they are not the baseline for comparing Penryn and Atom CPUID behavior.
+
+No `isa-applesmc` device or OSK is required by these scripts. The prepared Hackintosh image is expected to use the same FakeSMC/OpenCore path as the physical test media.
+
+Each launcher creates a small qcow2 overlay above the supplied base image. The base image is therefore not modified. By default the overlay is recreated for each run; set `QEMU_REUSE_OVERLAY=1` on Unix or pass `-ReuseOverlay` on Windows to keep it.
+
+### Unix / Linux / macOS launchers
+
+Vanilla Penryn control:
 
 ```bash
-QEMU_CPU=Penryn QEMU_MEM=2048 QEMU_SMP=2 bash scripts/qemu_boot.sh test.raw
+bash scripts/qemu_boot_vanilla.sh \
+  "$PWD/artifacts/qemu/asus1215p-vanilla.raw"
 ```
 
-After the Penryn control succeeds, the same vanilla kernel can be used for an Atom-negative control:
+Atom model-28 test:
 
 ```bash
-QEMU_CPU='n270,+lm,+nx' QEMU_MEM=2048 QEMU_SMP=4 bash scripts/qemu_boot.sh test.raw
+bash scripts/qemu_boot_atom.sh \
+  "$PWD/artifacts/qemu/asus1215p-atom.raw"
 ```
 
-The N270 CPU model has the same Intel family 6 / model 28 identity relevant to the XNU Atom whitelist. It is not a complete emulation of Pineview/NM10 or the ASUS motherboard. `+lm,+nx` makes the CPU-side test closer to the 64-bit-capable N570 while still booting the I386 kernel. Capture the QEMU serial log under `artifacts/qemu/`.
+If QEMU is not installed, the Bash launchers try to install it using the host package manager:
+
+- macOS: Homebrew, then MacPorts
+- Debian/Ubuntu: `apt`
+- Fedora/RHEL-family: `dnf`
+- Arch-family: `pacman`
+- SUSE-family: `zypper`
+
+Set `QEMU_AUTO_INSTALL=0` to disable automatic installation.
+
+Useful overrides:
+
+```bash
+QEMU_MEM=2048 QEMU_SMP=2 bash scripts/qemu_boot_vanilla.sh test.raw
+QEMU_MEM=2048 QEMU_SMP=4 bash scripts/qemu_boot_atom.sh test.raw
+QEMU_ACCEL=kvm bash scripts/qemu_boot_vanilla.sh test.raw
+```
+
+The Atom launcher defaults to:
+
+```text
+n270,+lm,+nx
+```
+
+QEMU's `n270` model supplies the Intel family 6 / model 28 identity that matters to the XNU Atom whitelist. `+lm,+nx` exposes capabilities closer to the 64-bit-capable N570 while the guest kernel itself remains I386. This is not a complete emulation of Pineview/NM10 or the ASUS motherboard.
+
+The older command remains as a compatibility alias for the vanilla profile:
+
+```bash
+bash scripts/qemu_boot.sh test.raw
+```
+
+### Windows 10/11 PowerShell launchers
+
+Vanilla Penryn control:
+
+```powershell
+PowerShell -ExecutionPolicy Bypass -File .\scripts\qemu_boot_vanilla.ps1 `
+  -Image .\artifacts\qemu\asus1215p-vanilla.raw
+```
+
+Atom model-28 test:
+
+```powershell
+PowerShell -ExecutionPolicy Bypass -File .\scripts\qemu_boot_atom.ps1 `
+  -Image .\artifacts\qemu\asus1215p-atom.raw
+```
+
+The PowerShell scripts first look for `qemu-system-x86_64.exe` in PATH and common install directories. If it is absent they try, in order:
+
+1. `winget install --id SoftwareFreedomConservancy.QEMU -e`
+2. Chocolatey, if already installed
+3. Scoop, if already installed
+
+After installation they refresh the process PATH and locate `qemu-img.exe` as well.
+
+Optional Windows overrides:
+
+```powershell
+.\scripts\qemu_boot_vanilla.ps1 -Image .\test.raw -MemoryMB 2048 -Smp 2
+.\scripts\qemu_boot_atom.ps1 -Image .\atom.raw -MemoryMB 2048 -Smp 4
+.\scripts\qemu_boot_vanilla.ps1 -Image .\test.raw -Accelerator whpx
+```
+
+For the reproducible baseline, keep `-Accelerator tcg`.
+
+### Logs
+
+Per-profile logs and overlays are stored under:
+
+```text
+artifacts/qemu/vanilla-penryn/
+artifacts/qemu/atom-n570/
+```
+
+Each run records:
+
+```text
+serial-YYYYMMDD-HHMMSS.log
+qemu-YYYYMMDD-HHMMSS.log
+```
+
+The QEMU log enables `guest_errors,cpu_reset`; the serial log is intended for XNU serial/debug output when the guest boot arguments enable it.
+
+### Pass criteria
+
+For the vanilla Penryn control, reaching the XNU banner is already valuable:
+
+```text
+Darwin Kernel Version 10.3.0
+```
+
+If the self-built vanilla kernel cannot reach XNU on Penryn, stop there and debug the build/boot chain before applying Atom changes.
 
 ## Phase 3: source-level N570 bring-up patch
 
@@ -198,11 +302,11 @@ artifacts/n570-debug/mach_kernel.dSYM
 
 ### QEMU Atom-profile test
 
-Stage the patched kernel into a copy of the test image ESP, then boot with the Atom-like CPU profile:
+Stage the patched kernel into the Atom test image ESP, then boot it with the dedicated launcher:
 
 ```bash
-QEMU_CPU='n270,+lm,+nx' QEMU_MEM=2048 QEMU_SMP=4 \
-  bash scripts/qemu_boot.sh /path/to/patched-test.raw
+bash scripts/qemu_boot_atom.sh \
+  "$PWD/artifacts/qemu/asus1215p-atom.raw"
 ```
 
 Look for messages such as:
