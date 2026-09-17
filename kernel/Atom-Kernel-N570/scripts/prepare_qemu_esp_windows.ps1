@@ -84,7 +84,7 @@ $diskBytes = [int64]$disk.Size
 $tailBytes = [int64][Math]::Min(1MB, $diskBytes - $headBytes)
 $tailOffset = $diskBytes - $tailBytes
 
-Log "Disk $DiskNumber: $($disk.FriendlyName), $diskBytes bytes"
+Log "Disk ${DiskNumber}: $($disk.FriendlyName), $diskBytes bytes"
 Log "ESP: offset=$($esp.Offset), size=$($esp.Size), copy head=$headBytes bytes"
 Log "DVD/HFS payload will NOT be copied"
 Log "output is logically $diskBytes bytes but sparse; expected allocated data is about $([Math]::Round(($headBytes + $tailBytes) / 1MB, 1)) MiB"
