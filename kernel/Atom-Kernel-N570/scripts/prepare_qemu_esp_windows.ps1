@@ -94,9 +94,9 @@ try {
 
     $kernelDir = Join-Path $espRoot "Kernels"
     New-Item -ItemType Directory -Force -Path $kernelDir | Out-Null
-    $kernelDst = Join-Path $kernelDir "kernel"
+    $kernelDst = Join-Path $kernelDir "mach_kernel"
     if (Test-Path $kernelDst -PathType Leaf) {
-        $backup = Join-Path $kernelDir "kernel.before-qemu-prep"
+        $backup = Join-Path $kernelDir "mach_kernel.before-qemu-prep"
         if (-not (Test-Path $backup)) {
             Copy-Item $kernelDst $backup -Force
             Log "backed up existing ESP kernel -> $backup"
@@ -107,7 +107,7 @@ try {
     $srcHash = (Get-FileHash $Kernel -Algorithm SHA256).Hash
     $dstHash = (Get-FileHash $kernelDst -Algorithm SHA256).Hash
     if ($srcHash -ne $dstHash) { throw "Kernel hash mismatch after staging to the ESP." }
-    Log "staged $Profile kernel to ESP; SHA256=$dstHash"
+    Log "staged $Profile Snow Leopard kernel as Kernels\\mach_kernel; SHA256=$dstHash"
 }
 finally {
     if ($tempLetter) {
