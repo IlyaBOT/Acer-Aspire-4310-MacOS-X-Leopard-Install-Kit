@@ -235,7 +235,7 @@ run_build() {
   cp -p "$OC_CACHE_ROOT/Utilities/LegacyBoot/boot1f32" "$BUILD_ROOT/OpenDuet/"
   cp -p "$OC_CACHE_ROOT/Utilities/LegacyBoot/bootIA32" "$BUILD_ROOT/OpenDuet/"
 
-  cp -p "$KERNEL_FILE" "$esp/Kernels/kernel"
+  cp -p "$KERNEL_FILE" "$esp/Kernels/mach_kernel"
   copy_kexts "$ocroot/Kexts"
 
   args=(
@@ -270,7 +270,7 @@ run_build() {
   fi
 
   python3 "$CONFIG_PATCHER" --check "$ocroot/config.plist"
-  python3 - "$ocroot/config.plist" "$esp/Kernels/kernel" <<'PY'
+  python3 - "$ocroot/config.plist" "$esp/Kernels/mach_kernel" <<'PY'
 import hashlib,plistlib,sys
 cfg=plistlib.load(open(sys.argv[1],'rb'))
 assert cfg['Kernel']['Scheme']['KernelArch']=='i386'
@@ -376,7 +376,7 @@ install_efi() {
   sudo ditto "$BUILD_ROOT/ESP/EFI" "$mountp/EFI"
   sudo ditto "$BUILD_ROOT/ESP/Kernels" "$mountp/Kernels"
   sudo cp -p "$BUILD_ROOT/ESP/boot" "$mountp/boot"
-  [[ -f "$mountp/EFI/OC/config.plist" && -f "$mountp/EFI/BOOT/BOOTIA32.efi" && -f "$mountp/Kernels/kernel" ]] || die "EFI/custom-kernel copy verification failed"
+  [[ -f "$mountp/EFI/OC/config.plist" && -f "$mountp/EFI/BOOT/BOOTIA32.efi" && -f "$mountp/Kernels/mach_kernel" ]] || die "EFI/custom-kernel copy verification failed"
   disknum="${DISK#/dev/disk}"
   boottool="$OC_CACHE_ROOT/Utilities/LegacyBoot/BootInstall_IA32.tool"
   chmod +x "$boottool" "$OC_CACHE_ROOT/Utilities/LegacyBoot/BootInstallBase.sh"
@@ -430,11 +430,11 @@ run_verify_usb() {
   diskutil mount "$efi" >/dev/null 2>&1 || true
   mp="$(diskutil info "$efi" 2>/dev/null | awk -F': *' '/Mount Point/ {print $2; exit}')"
   [[ -d "$mp" ]] || die "EFI is not mounted and could not be mounted"
-  for path in boot EFI/BOOT/BOOTIA32.efi EFI/OC/OpenCore.efi EFI/OC/config.plist EFI/OC/Drivers/HfsPlus32.efi Kernels/kernel; do
+  for path in boot EFI/BOOT/BOOTIA32.efi EFI/OC/OpenCore.efi EFI/OC/config.plist EFI/OC/Drivers/HfsPlus32.efi Kernels/mach_kernel; do
     if [[ -e "$mp/$path" ]]; then printf 'FOUND   %s\n' "$path"; else printf 'MISSING %s\n' "$path"; fi
   done
-  [[ -f "$mp/Kernels/kernel" ]] || die "Custom kernel missing from ESP/Kernels/kernel"
-  validate_kernel "$mp/Kernels/kernel" || die "ESP custom kernel is not the expected Darwin 10.3.0 i386 binary"
+  [[ -f "$mp/Kernels/mach_kernel" ]] || die "Custom kernel missing from ESP/Kernels/mach_kernel"
+  validate_kernel "$mp/Kernels/mach_kernel" || die "ESP custom kernel is not the expected Darwin 10.3.0 i386 binary"
   plutil -lint "$mp/EFI/OC/config.plist"
   python3 "$CONFIG_PATCHER" --check "$mp/EFI/OC/config.plist"
   printf 'ASUS 1215P config validation: PASS\n'
