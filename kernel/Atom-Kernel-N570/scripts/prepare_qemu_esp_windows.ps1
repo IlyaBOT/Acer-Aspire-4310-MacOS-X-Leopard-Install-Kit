@@ -117,7 +117,8 @@ finally {
 
 $headBytes = [int64]($esp.Offset + $esp.Size)
 $diskBytes = [int64]$disk.Size
-$tailBytes = [int64][Math]::Min(1MB, $diskBytes - $headBytes)
+$tailCandidate = [int64]($diskBytes - $headBytes)
+$tailBytes = if ($tailCandidate -lt [int64](1MB)) { $tailCandidate } else { [int64](1MB) }
 $tailOffset = $diskBytes - $tailBytes
 
 Log "Disk ${DiskNumber}: $($disk.FriendlyName), $diskBytes bytes"
@@ -147,7 +148,7 @@ try {
         $Destination.Position = $Offset
         $remaining = $Length
         while ($remaining -gt 0) {
-            $want = [int][Math]::Min($Buffer.Length, $remaining)
+            $want = [int][Math]::Min([int64]$Buffer.Length, [int64]$remaining)
             $read = $Source.Read($Buffer, 0, $want)
             if ($read -le 0) { throw "Unexpected end of PhysicalDrive while copying." }
             $Destination.Write($Buffer, 0, $read)
