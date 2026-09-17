@@ -1,5 +1,6 @@
 param(
     [string]$Image,
+    [string]$InstallerISO,
     [int]$MemoryMB = 1024,
     [int]$Smp = 1,
     [string]$Accelerator = "tcg",
@@ -9,8 +10,9 @@ param(
 $ErrorActionPreference = "Stop"
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $RootDir = (Resolve-Path (Join-Path $ScriptDir "..")).Path
-$DefaultImage = Join-Path $RootDir "artifacts\qemu\asus1215p-atom.raw"
+$DefaultImage = Join-Path $RootDir "artifacts\qemu\asus1215p-atom-esp.raw"
 if ([string]::IsNullOrWhiteSpace($Image)) { $Image = $DefaultImage }
+if ([string]::IsNullOrWhiteSpace($InstallerISO) -and $env:QEMU_INSTALLER_ISO) { $InstallerISO = $env:QEMU_INSTALLER_ISO }
 $VmDir = Join-Path $RootDir "artifacts\qemu\atom-n570"
 $Cpu = "n270,+lm,+nx"
 
@@ -110,9 +112,15 @@ if ($LASTEXITCODE -ne 0 -or -not ($cpuHelp -match 'n270')) {
 }
 
 if (-not (Test-Path $Image -PathType Leaf)) {
-    throw "Prepared Atom-patched boot disk image not found: $Image`nPass -Image <path> or create $DefaultImage"
+    throw "Prepared Atom ESP boot image not found: $Image. Create it with prepare_qemu_esp_windows.ps1 -Profile atom"
 }
 $BaseImage = (Resolve-Path $Image).Path
+
+$InstallerPath = $null
+if (-not [string]::IsNullOrWhiteSpace($InstallerISO)) {
+    if (-not (Test-Path $InstallerISO -PathType Leaf)) { throw "Snow Leopard installer ISO not found: $InstallerISO" }
+    $InstallerPath = (Resolve-Path $InstallerISO).Path
+}
 
 New-Item -ItemType Directory -Force -Path $VmDir | Out-Null
 $Overlay = Join-Path $VmDir "disk.qcow2"
@@ -149,7 +157,8 @@ Write-Log "CPU: $Cpu, vCPU: $Smp, RAM: $MemoryMB MiB, accelerator: $Accelerator"
 Write-Log "CPU intent: Bonnell family 6/model 28 via QEMU n270, with LM/NX exposed for N570-like CPUID capability"
 Write-Log "machine: legacy PC/i440FX-class, IDE disk, std VGA, USB keyboard/tablet"
 Write-Log "network: disabled; audio: disabled"
-Write-Log "base image: $BaseImage"
+Write-Log "ESP boot image: $BaseImage"
+if ($InstallerPath) { Write-Log "Snow Leopard DVD ISO: $InstallerPath" } else { Write-Log "Snow Leopard DVD ISO: not attached" }
 Write-Log "overlay: $Overlay"
 Write-Log "serial log: $SerialLog"
 Write-Log "QEMU log: $QemuLog"
@@ -161,7 +170,10 @@ $QemuArgs = @(
     "-cpu", "$Cpu,vendor=GenuineIntel",
     "-m", "$MemoryMB",
     "-smp", "$Smp",
-    "-drive", "file=$Overlay,format=qcow2,if=ide,index=0",
+    "-drive", "file=$Overlay,format=qcow2,if=ide,index=0"
+)
+if ($InstallerPath) { $QemuArgs += @("-drive", "file=$InstallerPath,media=cdrom,if=ide,index=2,readonly=on") }
+$QemuArgs += @(
     "-boot", "c",
     "-vga", "std",
     "-usb",
