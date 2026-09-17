@@ -109,7 +109,7 @@ First validate the self-built vanilla kernel on a CPU model Snow Leopard already
 
 ### Prepare the boot disk image
 
-The QEMU launchers expect a **whole bootable disk image** containing the same OpenDuet/OpenCore + Snow Leopard boot chain used for the physical machine. The required test kernel must already be staged in its ESP as `Kernels/kernel`.
+The QEMU launchers expect a **whole bootable disk image** containing the same OpenDuet/OpenCore + Snow Leopard boot chain used for the physical machine. The required Snow Leopard test kernel must be staged as `Kernels/mach_kernel`. OpenCore preserves the basename requested by `boot.efi`; Snow Leopard requests `mach_kernel`, so a file named only `Kernels/kernel` is not used for this path.
 
 On Linux, a known-good physical USB can be cloned and the vanilla kernel staged in one step:
 
