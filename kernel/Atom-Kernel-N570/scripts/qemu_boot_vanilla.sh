@@ -3,8 +3,9 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd -P)"
 ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd -P)"
-DEFAULT_IMAGE="$ROOT_DIR/artifacts/qemu/asus1215p-vanilla.raw"
+DEFAULT_IMAGE="$ROOT_DIR/artifacts/qemu/asus1215p-vanilla-esp.raw"
 IMAGE="${1:-$DEFAULT_IMAGE}"
+INSTALLER_ISO="${2:-${QEMU_INSTALLER_ISO:-}}"
 QEMU_BIN="${QEMU_BIN:-}"
 QEMU_IMG_BIN="${QEMU_IMG_BIN:-}"
 QEMU_CPU="${QEMU_CPU:-Penryn}"
@@ -97,8 +98,13 @@ if ! find_qemu || ! find_qemu_img; then
   find_qemu_img || die "QEMU installation completed, but qemu-img is still not in PATH"
 fi
 
-[ -f "$IMAGE" ] || die "prepared boot disk image not found: $IMAGE\nPass it as the first argument or create $DEFAULT_IMAGE"
+[ -f "$IMAGE" ] || die "prepared ESP boot image not found: $IMAGE\nCreate it with prepare_qemu_esp_linux.sh / prepare_qemu_esp_windows.ps1"
 BASE_IMAGE="$(cd "$(dirname "$IMAGE")" && pwd -P)/$(basename "$IMAGE")"
+
+if [ -n "$INSTALLER_ISO" ]; then
+  [ -f "$INSTALLER_ISO" ] || die "Snow Leopard installer ISO not found: $INSTALLER_ISO"
+  INSTALLER_ISO="$(cd "$(dirname "$INSTALLER_ISO")" && pwd -P)/$(basename "$INSTALLER_ISO")"
+fi
 
 mkdir -p "$VM_DIR"
 OVERLAY="$VM_DIR/disk.qcow2"
@@ -123,11 +129,15 @@ log "QEMU: $QEMU_BIN"
 log "CPU: $QEMU_CPU, vCPU: $QEMU_SMP, RAM: ${QEMU_MEM} MiB, accelerator: $QEMU_ACCEL"
 log "machine: legacy PC/i440FX-class, IDE disk, std VGA, USB keyboard/tablet"
 log "network: disabled; audio: disabled"
-log "base image: $BASE_IMAGE"
+log "ESP boot image: $BASE_IMAGE"
+if [ -n "$INSTALLER_ISO" ]; then log "Snow Leopard DVD ISO: $INSTALLER_ISO"; else log "Snow Leopard DVD ISO: not attached"; fi
 log "overlay: $OVERLAY"
 log "serial log: $SERIAL_LOG"
 log "QEMU log: $QEMU_LOG"
 log "expected guest payload: vanilla self-built Darwin 10.3.0 kernel"
+
+EXTRA_ARGS=()
+if [ -n "$INSTALLER_ISO" ]; then EXTRA_ARGS+=( -drive "file=$INSTALLER_ISO,media=cdrom,if=ide,index=2,readonly=on" ); fi
 
 exec "$QEMU_BIN" \
   -name "SnowLeopard-Vanilla-Penryn" \
@@ -136,6 +146,7 @@ exec "$QEMU_BIN" \
   -m "$QEMU_MEM" \
   -smp "$QEMU_SMP" \
   -drive "file=$OVERLAY,format=qcow2,if=ide,index=0" \
+  "${EXTRA_ARGS[@]}" \
   -boot c \
   -vga std \
   -usb \
