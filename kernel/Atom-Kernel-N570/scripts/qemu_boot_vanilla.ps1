@@ -112,9 +112,40 @@ if (-not (Test-Path $Image -PathType Leaf)) {
 $BaseImage = (Resolve-Path $Image).Path
 
 $InstallerPath = $null
+$InstallerAliasDrive = $null
 if (-not [string]::IsNullOrWhiteSpace($InstallerISO)) {
     if (-not (Test-Path $InstallerISO -PathType Leaf)) { throw "Snow Leopard installer ISO not found: $InstallerISO" }
     $InstallerPath = (Resolve-Path $InstallerISO).Path
+
+    # The Windows QEMU build can fail to open non-ASCII paths even when
+    # PowerShell itself resolves them correctly. If only the parent directory
+    # is non-ASCII, create a temporary ASCII drive alias with SUBST.
+    if ($InstallerPath -match '[^\x00-\x7F]') {
+        $isoName = [IO.Path]::GetFileName($InstallerPath)
+        if ($isoName -match '[^\x00-\x7F]') {
+            throw "QEMU cannot reliably open this non-ASCII ISO filename on Windows. Rename the ISO file itself to ASCII characters; non-ASCII parent directories are handled automatically."
+        }
+
+        $isoParent = Split-Path -Parent $InstallerPath
+        foreach ($letter in @("V","U","T","S","R","Q","P","O","N","M","L","K","J","H","G","F","E")) {
+            $drive = $letter + ":"
+            & subst.exe $drive $isoParent 2>$null | Out-Null
+            if ($LASTEXITCODE -eq 0) {
+                $aliasPath = $drive + "\" + $isoName
+                if (Test-Path $aliasPath -PathType Leaf) {
+                    $InstallerAliasDrive = $drive
+                    $InstallerPath = $aliasPath
+                    Write-Log "created temporary ASCII ISO path alias: $InstallerPath"
+                    break
+                }
+                & subst.exe $drive /D 2>$null | Out-Null
+            }
+        }
+
+        if (-not $InstallerAliasDrive) {
+            throw "Could not create a temporary ASCII drive alias for the Unicode ISO path."
+        }
+    }
 }
 
 New-Item -ItemType Directory -Force -Path $VmDir | Out-Null
@@ -183,5 +214,15 @@ $QemuArgs += @(
     "-D", $QemuLog
 )
 
-& $Qemu @QemuArgs
-exit $LASTEXITCODE
+$qemuExit = 1
+try {
+    & $Qemu @QemuArgs
+    $qemuExit = $LASTEXITCODE
+}
+finally {
+    if ($InstallerAliasDrive) {
+        & subst.exe $InstallerAliasDrive /D 2>$null | Out-Null
+        Write-Log "removed temporary ISO path alias $InstallerAliasDrive"
+    }
+}
+exit $qemuExit
