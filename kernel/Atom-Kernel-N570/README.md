@@ -40,7 +40,9 @@ kernel/Atom-Kernel-N570/
 │   ├── build_n570_debug.sh            # I386 DEBUG build after patching
 │   ├── test_n570_debug.sh             # patched kernel validation
 │   ├── stage_kernel.sh                # copy a test kernel to mounted ESP
-│   ├── prepare_qemu_image_linux.sh    # clone known-good USB and stage kernel
+│   ├── prepare_qemu_image_linux.sh    # legacy full-disk clone helper
+│   ├── prepare_qemu_esp_linux.sh      # sparse GPT+ESP image; skips DVD payload
+│   ├── prepare_qemu_esp_windows.ps1   # Windows sparse GPT+ESP image; skips DVD payload
 │   ├── qemu_boot_vanilla.sh           # Unix/Linux/macOS: Penryn control VM
 │   ├── qemu_boot_atom.sh              # Unix/Linux/macOS: Atom model-28 VM
 │   ├── qemu_boot_vanilla.ps1          # Windows 10/11: Penryn control VM
@@ -363,3 +365,32 @@ git checkout -- src/xnu/osfmk/i386/cpuid.h \
 - Preserve SHA-256 and symbols for every test kernel.
 - Prefer one behavioral hypothesis per patch/test kernel.
 - Do not spoof the complete Atom model as Merom unless a specific downstream dependency proves that it is necessary.
+
+## EFI-only QEMU image workflow
+
+Do not clone the whole 60+ GiB USB for QEMU. The preferred helpers preserve the original logical disk geometry but copy only the boot-critical regions: MBR + primary GPT + partition 1 (ESP), plus the final 1 MiB containing the backup GPT. The Snow Leopard DVD/HFS partition payload is left as a sparse hole, so only roughly the ESP size is actually copied and allocated.
+
+Windows 10/11, elevated PowerShell:
+
+~~~powershell
+.\scripts\prepare_qemu_esp_windows.ps1 -DiskNumber 7 -Profile vanilla
+.\scripts\qemu_boot_vanilla.ps1 -InstallerISO "D:\ISO\Snow-Leopard-10.6.3.iso"
+~~~
+
+The Windows helper does not use Set-Disk -IsOffline because Windows rejects that operation for many removable USB devices. It opens PhysicalDrive read-only with shared access.
+
+Linux:
+
+~~~bash
+sudo bash scripts/prepare_qemu_esp_linux.sh --source-disk /dev/sdX --profile vanilla
+QEMU_INSTALLER_ISO="/path/to/Snow-Leopard-10.6.3.iso" bash scripts/qemu_boot_vanilla.sh
+~~~
+
+For the patched kernel, replace vanilla with atom. Outputs are:
+
+~~~text
+artifacts/qemu/asus1215p-vanilla-esp.raw
+artifacts/qemu/asus1215p-atom-esp.raw
+~~~
+
+The HFS/DVD data is intentionally absent from these sparse images, so attach the original Snow Leopard 10.6.3 ISO as a QEMU CD-ROM. The launchers accept -InstallerISO on PowerShell, a second positional argument on Bash, or QEMU_INSTALLER_ISO in the environment.
