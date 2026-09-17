@@ -172,7 +172,7 @@ $QemuArgs = @(
     "-smp", "$Smp",
     "-drive", "file=$Overlay,format=qcow2,if=ide,index=0"
 )
-if ($InstallerPath) { $QemuArgs += @("-drive", "file=$InstallerPath,media=cdrom,if=ide,index=2,readonly=on") }
+if ($InstallerPath) { $QemuArgs += @("-cdrom", $InstallerPath) }
 $QemuArgs += @(
     "-boot", "c",
     "-vga", "std",
