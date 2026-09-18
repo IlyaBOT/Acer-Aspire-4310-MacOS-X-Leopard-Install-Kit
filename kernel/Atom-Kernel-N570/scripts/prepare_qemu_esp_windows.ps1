@@ -35,7 +35,14 @@ if ([string]::IsNullOrWhiteSpace($Kernel)) {
 if (-not (Test-Path $Kernel -PathType Leaf)) { throw "Kernel not found: $Kernel" }
 $Kernel = (Resolve-Path $Kernel).Path
 
-if ([string]::IsNullOrWhiteSpace($Output)) { $Output = Join-Path $RootDir "artifacts\qemu\asus1215p-$Profile-esp.raw" }
+if ([string]::IsNullOrWhiteSpace($Output)) {
+    $Output = Join-Path $RootDir "artifacts\qemu\asus1215p-$Profile-esp.raw"
+} elseif (-not [IO.Path]::IsPathRooted($Output)) {
+    # .NET's process working directory can differ from PowerShell's current
+    # location (notably in elevated shells), so resolve relative paths against
+    # Get-Location explicitly instead of C:\Windows\System32.
+    $Output = Join-Path (Get-Location).Path $Output
+}
 $Output = [IO.Path]::GetFullPath($Output)
 New-Item -ItemType Directory -Force -Path (Split-Path -Parent $Output) | Out-Null
 if (Test-Path $Output) {
