@@ -31,6 +31,7 @@ have make || die "make is required"
 
 grep -q 'CPUID_MODEL_ATOM' "$SRC_DIR/osfmk/i386/cpuid.h" || die "Atom model constant not found; apply scripts/apply_n570_atom_debug_patch.py first"
 grep -q 'case CPUID_MODEL_ATOM:' "$SRC_DIR/osfmk/i386/cpuid.c" || die "Atom family case not found"
+grep -A2 'case CPUID_MODEL_ATOM:' "$SRC_DIR/osfmk/i386/cpuid.c" | grep -q 'CPUFAMILY_INTEL_YONAH' || die "Atom model 28 must use the historical Yonah compatibility family; run scripts/apply_n570_atom_debug_patch.py"
 grep -F -q '[N570 ATOM-KERNEL]' "$SRC_DIR/osfmk/i386/i386_init.c" || die "N570 debug markers not found"
 
 if [ ! -x "$BUILD_TOOLS_BIN/relpath" ] || \

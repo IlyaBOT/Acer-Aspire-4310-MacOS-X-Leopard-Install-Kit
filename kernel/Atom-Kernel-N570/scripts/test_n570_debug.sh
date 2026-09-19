@@ -29,6 +29,8 @@ case "$DESC" in *i386*) ;; *) die "kernel has no i386 architecture" ;; esac
 EXPECTED_BANNER="Darwin Kernel Version $DARWIN_VERSION"
 grep -a -F -q "$EXPECTED_BANNER" "$KERNEL" || die "runtime kernel banner not found: $EXPECTED_BANNER"
 log "PASS runtime kernel banner: $EXPECTED_BANNER"
+grep -a -F -q 'DEBUG_I386' "$KERNEL" || die "kernel banner does not identify a DEBUG_I386 build"
+log "PASS kernel configuration: DEBUG_I386"
 
 if grep -a -F -q "$XNU_VERSION" "$KERNEL"; then
   log "INFO Apple OSS package label is also embedded: $XNU_VERSION"
@@ -37,13 +39,16 @@ else
 fi
 
 grep -a -F -q '[N570 ATOM-KERNEL]' "$KERNEL" || die "N570 debug prefix not found in built kernel"
-grep -q 'CPUID_MODEL_ATOM' "$SRC_DIR/osfmk/i386/cpuid.h" || die "Atom model constant missing"
+grep -Eq '^#define[[:space:]]+CPUID_MODEL_ATOM[[:space:]]+28([[:space:]]|$)' "$SRC_DIR/osfmk/i386/cpuid.h" || die "Atom model constant is not exactly model 28"
 grep -q 'case CPUID_MODEL_ATOM:' "$SRC_DIR/osfmk/i386/cpuid.c" || die "Atom acceptance case missing"
-grep -A2 'case CPUID_MODEL_ATOM:' "$SRC_DIR/osfmk/i386/cpuid.c" | grep -q 'CPUFAMILY_INTEL_6_13' || die "Atom is not mapped to CPUFAMILY_INTEL_6_13"
+grep -A2 'case CPUID_MODEL_ATOM:' "$SRC_DIR/osfmk/i386/cpuid.c" | grep -q 'CPUFAMILY_INTEL_YONAH' || die "Atom is not mapped to the historical Yonah compatibility family"
+if grep -Eq 'cpuid_model[[:space:]]*=[[:space:]]*(15|CPUID_MODEL_MEROM|14|CPUID_MODEL_YONAH)' "$SRC_DIR/osfmk/i386/cpuid.c"; then
+  die "source rewrites cpuid_model to another CPU model"
+fi
 
 log "PASS source provenance: $XNU_VERSION / commit $XNU_COMMIT"
 log "PASS Atom model 28 is represented explicitly in source"
-log "PASS Atom model is accepted without rewriting cpuid_model to Merom 15"
+log "PASS Atom model 28 is accepted via Yonah compatibility family without CPUID model spoofing"
 log "PASS debug prefix is embedded in kernel"
 
 if have otool; then

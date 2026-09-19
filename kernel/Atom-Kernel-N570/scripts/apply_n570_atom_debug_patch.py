@@ -48,10 +48,43 @@ for path in (cpuid_h, cpuid_c, i386_init_c):
     if not os.path.isfile(path):
         die("missing source file: %s" % path)
 
-# Refuse to stack the patch twice.
-combined = read_text(cpuid_h) + read_text(cpuid_c) + read_text(i386_init_c)
-if PREFIX in combined or "CPUID_MODEL_ATOM" in read_text(cpuid_h):
-    die("N570 patch appears to be already applied; restore src/xnu before reapplying")
+cpuid_h_text = read_text(cpuid_h)
+cpuid_c_text = read_text(cpuid_c)
+i386_init_text = read_text(i386_init_c)
+
+old_atom_case = (
+    "\t\tcase CPUID_MODEL_ATOM:\n"
+    "\t\t\tcpufamily = CPUFAMILY_INTEL_6_13;\n"
+    "\t\t\tbreak;"
+)
+new_atom_case = (
+    "\t\tcase CPUID_MODEL_ATOM:\n"
+    "\t\t\tcpufamily = CPUFAMILY_INTEL_YONAH;\n"
+    "\t\t\tbreak;"
+)
+
+# Be idempotent, and also migrate trees patched by the first N570 experiment.
+# That experiment used CPUFAMILY_INTEL_6_13 as an unverified bring-up
+# hypothesis. Historical Snow Leopard Atom patches instead used Yonah as the
+# compatibility family while leaving the real CPU model otherwise usable.
+has_atom_constant = "CPUID_MODEL_ATOM" in cpuid_h_text
+has_markers = PREFIX in i386_init_text
+if has_atom_constant or has_markers:
+    if has_atom_constant and has_markers and old_atom_case in cpuid_c_text:
+        cpuid_c_text = replace_once(
+            cpuid_c_text,
+            old_atom_case,
+            new_atom_case,
+            "migrate Atom family from 6_13 to Yonah",
+        )
+        write_text(cpuid_c, cpuid_c_text)
+        print("[atom-kernel-patch] migrated existing Atom patch: CPUFAMILY_INTEL_6_13 -> CPUFAMILY_INTEL_YONAH")
+        print("[atom-kernel-patch] preserved CPUID model 28 and existing instrumentation")
+        sys.exit(0)
+    if has_atom_constant and has_markers and new_atom_case in cpuid_c_text:
+        print("[atom-kernel-patch] Atom/Yonah compatibility patch is already applied")
+        sys.exit(0)
+    die("N570 patch appears partially or differently applied; inspect git diff before continuing")
 
 # 1) Restore an explicit Atom model constant while preserving the real CPUID model 28.
 text = read_text(cpuid_h)
@@ -63,14 +96,17 @@ text = replace_once(
 )
 write_text(cpuid_h, text)
 
-# 2) Accept Atom model 28 without rewriting it to Merom model 15.
-# Historical XNU-derived code commonly grouped Atom with CPUFAMILY_INTEL_6_13;
-# this is intentionally a first bring-up hypothesis, not a final semantic claim.
+# 2) Accept Atom model 28 without rewriting its CPUID model.
+# Snow Leopard 10.6/10.6.1 accepted Intel family 6 model >= 13 generically.
+# 10.6.2 introduced an explicit family/model whitelist and excluded model 28.
+# Contemporary source-level Atom workarounds routed otherwise-unrecognized
+# family-6 CPUs through the Yonah compatibility family. Keep cpuid_model == 28
+# and reproduce only that compatibility-family decision here.
 text = read_text(cpuid_c)
 text = replace_once(
     text,
     "\t\tcase 23:\n\t\t\tcpufamily = CPUFAMILY_INTEL_PENRYN;\n\t\t\tbreak;\n\t\tcase CPUID_MODEL_NEHALEM:",
-    "\t\tcase 23:\n\t\t\tcpufamily = CPUFAMILY_INTEL_PENRYN;\n\t\t\tbreak;\n\t\tcase CPUID_MODEL_ATOM:\n\t\t\tcpufamily = CPUFAMILY_INTEL_6_13;\n\t\t\tbreak;\n\t\tcase CPUID_MODEL_NEHALEM:",
+    "\t\tcase 23:\n\t\t\tcpufamily = CPUFAMILY_INTEL_PENRYN;\n\t\t\tbreak;\n\t\tcase CPUID_MODEL_ATOM:\n\t\t\tcpufamily = CPUFAMILY_INTEL_YONAH;\n\t\t\tbreak;\n\t\tcase CPUID_MODEL_NEHALEM:",
     "cpuid.c Atom family acceptance",
 )
 write_text(cpuid_c, text)
@@ -128,7 +164,7 @@ text = replace_once(
 write_text(i386_init_c, text)
 
 print("[atom-kernel-patch] applied source-level Atom model 28 support")
-print("[atom-kernel-patch] cpufamily hypothesis: CPUFAMILY_INTEL_6_13")
+print("[atom-kernel-patch] Atom compatibility family: CPUFAMILY_INTEL_YONAH")
 print("[atom-kernel-patch] debug prefix: %s" % PREFIX)
 print("[atom-kernel-patch] modified:")
 print("  %s" % cpuid_h)

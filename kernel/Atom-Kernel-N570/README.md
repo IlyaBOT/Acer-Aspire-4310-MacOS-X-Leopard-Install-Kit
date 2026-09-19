@@ -38,7 +38,9 @@ kernel/Atom-Kernel-N570/
 │   ├── run_vanilla_pipeline.sh        # bootstrap + audit + build + validation
 │   ├── apply_n570_atom_debug_patch.py # source-level model 28 + debug checkpoints
 │   ├── build_n570_debug.sh            # I386 DEBUG build after patching
-│   ├── test_n570_debug.sh             # patched kernel validation
+│   ├── test_n570_debug.sh             # patched DEBUG kernel validation
+│   ├── build_n570_release.sh          # I386 RELEASE build after patching
+│   ├── test_n570_release.sh           # patched RELEASE kernel validation
 │   ├── stage_kernel.sh                # copy a test kernel to mounted ESP
 │   ├── prepare_qemu_image_linux.sh    # legacy full-disk clone helper
 │   ├── prepare_qemu_esp_linux.sh      # sparse GPT+ESP image; skips DVD payload
@@ -280,7 +282,7 @@ The first patch does three things only:
 2. accepts model 28 in `cpuid_set_cpufamily()` while preserving `cpuid_model == 28`;
 3. adds early/late bring-up checkpoints using the mandatory `[N570 ATOM-KERNEL]` prefix.
 
-For the initial bring-up hypothesis, Atom is mapped to `CPUFAMILY_INTEL_6_13`. This follows historical XNU-derived Atom handling and avoids lying that the CPU itself is Merom model 15. It is a hypothesis to validate, not the final semantic model.
+Atom model 28 is mapped to `CPUFAMILY_INTEL_YONAH` as a compatibility family while the real `cpuid_model == 28` and CPUID signature remain untouched. This follows the contemporary Snow Leopard Atom source workaround: 10.6/10.6.1 accepted Intel family 6 model >= 13 generically, while 10.6.2 introduced an explicit whitelist that excluded Atom; the historical source workaround routed otherwise-unrecognized family-6 CPUs through the Yonah family. This is deliberately narrower than spoofing the CPU itself as Yonah or Merom.
 
 Build the instrumented DEBUG I386 kernel:
 
@@ -314,6 +316,8 @@ Expected RELEASE artifact:
 ```text
 artifacts/n570-release/mach_kernel
 ```
+
+The DEBUG-only `pmap_x86_common.c` resident-count assertion is not currently treated as an Atom bug. The same patched DEBUG_I386 binary reproduces it under the supported QEMU Penryn model, after taking the normal Penryn CPUID path. Apple's XNU configuration defines DEBUG as RELEASE plus `mach_assert`, while RELEASE omits `MACH_ASSERT`; therefore the next apples-to-apples runtime control is the patched RELEASE_I386 build. Do not patch or suppress the pmap assertion in source unless a RELEASE control demonstrates a real pmap failure.
 
 ### QEMU Atom-profile test
 
