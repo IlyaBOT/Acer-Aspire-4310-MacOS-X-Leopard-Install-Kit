@@ -302,6 +302,19 @@ artifacts/n570-debug/mach_kernel.sys
 artifacts/n570-debug/mach_kernel.dSYM
 ```
 
+After the DEBUG control has proven the Atom model-28 path, build the same patched source as RELEASE for an apples-to-apples comparison with the working vanilla RELEASE kernel. This removes MACH_ASSERT-only panics while preserving the Atom acceptance case and the direct `[N570 ATOM-KERNEL]` kprintf checkpoints:
+
+```bash
+bash scripts/build_n570_release.sh
+bash scripts/test_n570_release.sh artifacts/n570-release/mach_kernel
+```
+
+Expected RELEASE artifact:
+
+```text
+artifacts/n570-release/mach_kernel
+```
+
 ### QEMU Atom-profile test
 
 Stage the patched kernel into the Atom test image ESP, then boot it with the dedicated launcher:
