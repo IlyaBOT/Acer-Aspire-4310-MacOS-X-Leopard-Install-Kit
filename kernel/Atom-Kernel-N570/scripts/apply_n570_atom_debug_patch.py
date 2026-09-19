@@ -69,6 +69,32 @@ new_atom_case = (
 # compatibility family while leaving the real CPU model otherwise usable.
 has_atom_constant = "CPUID_MODEL_ATOM" in cpuid_h_text
 has_markers = PREFIX in i386_init_text
+
+# The first instrumentation revision put a DEBUG-only DBG() macro directly
+# under an if statement. In RELEASE, DBG expands to nothing, leaving an empty
+# if body; GCC 4.2 warns about it and XNU promotes the warning to an error.
+old_cpu_mode_checkpoint = (
+    "\tcpu_mode_init(current_cpu_datap());\n"
+    "\tif (is_boot_cpu)\n"
+    "\t\tDBG(\"[N570 ATOM-KERNEL] vstart: cpu_mode_init complete cpu=%d\\n\", cpu);\n"
+)
+new_cpu_mode_checkpoint = (
+    "\tcpu_mode_init(current_cpu_datap());\n"
+    "#if DEBUG\n"
+    "\tif (is_boot_cpu)\n"
+    "\t\tDBG(\"[N570 ATOM-KERNEL] vstart: cpu_mode_init complete cpu=%d\\n\", cpu);\n"
+    "#endif\n"
+)
+if old_cpu_mode_checkpoint in i386_init_text:
+    i386_init_text = replace_once(
+        i386_init_text,
+        old_cpu_mode_checkpoint,
+        new_cpu_mode_checkpoint,
+        "make cpu_mode checkpoint RELEASE-safe",
+    )
+    write_text(i386_init_c, i386_init_text)
+    print("[atom-kernel-patch] repaired RELEASE-incompatible DEBUG checkpoint")
+
 if has_atom_constant or has_markers:
     if has_atom_constant and has_markers and old_atom_case in cpuid_c_text:
         cpuid_c_text = replace_once(
@@ -128,7 +154,7 @@ text = replace_once(
 text = replace_once(
     text,
     "\tcpu_mode_init(current_cpu_datap());\n\n\t/* enable NX/XD */",
-    "\tcpu_mode_init(current_cpu_datap());\n\tif (is_boot_cpu)\n\t\tDBG(\"[N570 ATOM-KERNEL] vstart: cpu_mode_init complete cpu=%d\\n\", cpu);\n\n\t/* enable NX/XD */",
+    "\tcpu_mode_init(current_cpu_datap());\n#if DEBUG\n\tif (is_boot_cpu)\n\t\tDBG(\"[N570 ATOM-KERNEL] vstart: cpu_mode_init complete cpu=%d\\n\", cpu);\n#endif\n\n\t/* enable NX/XD */",
     "i386_init.c cpu-mode checkpoint",
 )
 text = replace_once(

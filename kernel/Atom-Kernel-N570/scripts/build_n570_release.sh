@@ -33,6 +33,11 @@ grep -q 'CPUID_MODEL_ATOM' "$SRC_DIR/osfmk/i386/cpuid.h" || die "Atom model cons
 grep -q 'case CPUID_MODEL_ATOM:' "$SRC_DIR/osfmk/i386/cpuid.c" || die "Atom family case not found"
 grep -A2 'case CPUID_MODEL_ATOM:' "$SRC_DIR/osfmk/i386/cpuid.c" | grep -q 'CPUFAMILY_INTEL_YONAH' || die "Atom model 28 must use the historical Yonah compatibility family; run scripts/apply_n570_atom_debug_patch.py"
 grep -F -q '[N570 ATOM-KERNEL]' "$SRC_DIR/osfmk/i386/i386_init.c" || die "N570 instrumentation markers not found"
+if grep -B1 -F '[N570 ATOM-KERNEL] vstart: cpu_mode_init complete' "$SRC_DIR/osfmk/i386/i386_init.c" | grep -q 'if (is_boot_cpu)'; then
+  if ! grep -B2 -F '[N570 ATOM-KERNEL] vstart: cpu_mode_init complete' "$SRC_DIR/osfmk/i386/i386_init.c" | grep -q '#if DEBUG'; then
+    die "old DEBUG checkpoint is not RELEASE-safe; rerun scripts/apply_n570_atom_debug_patch.py"
+  fi
+fi
 
 if [ ! -x "$BUILD_TOOLS_BIN/relpath" ] || \
    [ ! -x "$BUILD_TOOLS_BIN/decomment" ] || \
