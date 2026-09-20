@@ -2,11 +2,28 @@
 
 This target now has a **physical Linux hardware audit**. Raw SysReport data is intentionally kept out of Git because it contains machine-specific identifiers; sanitized findings are in [`AUDIT.md`](AUDIT.md).
 
+
+## Physical Snow Leopard validation
+
+On 2026-09-20 the real ASUS Eee PC 1215P reached the functional Mac OS X 10.6.3 Installer GUI/userland with the source-built Darwin 10.3.0 i386 Atom kernel.
+
+Confirmed from the running Installer:
+
+- genuine Intel Atom N570 remained visible as family 6 / model 28 / stepping 10, CPUID signature `0x106CA`;
+- 2 physical cores / 4 logical threads were visible to XNU;
+- native `8086:27C1` AHCI and the internal Kingston A400 SSD worked;
+- USB worked, including the internal AzureWave/IMC UVC webcam `13D3:5711`;
+- PS/2 input and the Installer GUI were usable;
+- the GMA3150 device-property spoof exposed a GMA950-style `0x27A2` identity, but the captured session used generic `IONDRVFramebuffer`; Apple GMA acceleration/framebuffer loading is not yet proven;
+- audio and AirPort were not working in the baseline capture.
+
+The apparent early-I/OKit “hang” was not a confirmed matcher deadlock. Broad `io=0x20007f` synchronous IOKit logging plus the temporary MATCHTRACE kernel caused extreme slowdown and log volume. The pre-peripheral source/tooling state that reached the Installer is preserved by tag `n570-xnu-10.3.0-physical-r1`.
+
 ## Bring-up order
 
 1. First macOS target: **Snow Leopard 10.6.3**, OpenCore Legacy IA32, i386 kernelspace, Atom-capable kernel.
 2. Boot with the smallest possible set: FakeSMC + PS/2, native Intel `27C1` AHCI first, audited GMA3150 framebuffer properties.
-3. Stabilize display/input/storage before adding network/audio/battery.
+3. Base display/input/storage bring-up is physically validated to the 10.6.3 Installer; continue with clean RELEASE boot and device-specific testing.
 4. Add confirmed AR8152 Ethernet using a period-correct AtherosL1cEthernet build.
 5. Add ALC269VB audio and ACPI battery support after a stable desktop.
 6. Attempt confirmed AR9285 Wi-Fi only after the base 10.6.3 system is stable.
@@ -98,13 +115,13 @@ The physical NIC is exactly `1969:2062`. Historical AtherosL1cEthernet documenta
 
 The physical card is AR9285 `168C:002B`. Historical Snow Leopard reports show this card working using patched/replaced Atheros components in `IO80211Family`, including reports on 10.6.3. Do not automatically replace the Apple Wi-Fi stack until the exact binary's provenance and i386 support are checked.
 
-For the very first boot, wired Ethernet is still preferable; Wi-Fi is optional.
+The minimal physical boot is now proven. AR8152 Ethernet and the AR9285 Atheros path are the next device-specific runtime tests; Wi-Fi remains experimental on the 10.6.3 Apple IO80211 stack.
 
 ## Audio / battery / webcam
 
-- ALC269VB codec topology is captured; first candidate is VoodooHDA after base boot.
-- ACPI `BAT0` is functional under Linux, so a legacy battery kext is plausible after base boot.
-- Webcam `13D3:5711` is standard USB UVC and should be tested with Apple's class driver before adding anything vendor-specific.
+- ALC269VB codec topology is captured; VoodooHDA is staged as the first runtime candidate, but audio is not yet physically validated.
+- ACPI `BAT0`, `EC0` and `AC0` are exposed; a legacy VoodooBattery candidate is staged, but battery reporting is not yet physically validated.
+- Webcam `13D3:5711` worked in the 10.6.3 Installer through the USB/UVC class stack.
 
 ## Snow Leopard historical evidence
 
@@ -130,11 +147,15 @@ We use this only as proof of feasibility, **not** as a package recipe. The new p
 - AtherosL1cEthernet controller list: https://www.insanelymac.com/forum/files/file/374-atherosl1cethernetkext/
 - Historical page supplied for research: https://web.archive.org/web/20180711100555/http://www.eee-pc.ru/forum/read/87/19208
 
-## Remaining unknowns before first macOS boot
+## Remaining work after first macOS boot
 
-- exact Atom 10.6.3 kernel binary/provenance to package;
-- final OpenCore IA32 config generated from this target profile;
-- exact behavior of GMA3150 framebuffer/native resolution under OS X;
-- integrated card-reader ID with media inserted;
-- whether Bluetooth hardware is absent or merely disabled;
-- macOS sleep/wake, brightness and Fn-key behavior.
+- boot the clean non-MATCHTRACE RELEASE kernel on the physical N570 and confirm normal boot time;
+- install Snow Leopard to disk and validate normal desktop/post-install boot;
+- validate AR8152 v2 Ethernet with the period-correct AtherosL1cEthernet candidate;
+- validate AR9285 `168C:002B` against the selected Snow Leopard IO80211/Atheros path;
+- validate VoodooHDA on the ALC269VB codec and map working outputs/inputs;
+- validate ACPI battery reporting and only patch DSDT if the battery driver cannot consume the firmware methods directly;
+- investigate whether AppleIntelIntegratedFramebuffer / GMA950 acceleration can attach to the GMA3150 spoof, without claiming QE/CI until proven;
+- recheck the integrated card reader with media inserted;
+- validate sleep/wake, brightness, Fn keys, Ethernet/Wi-Fi persistence and reboot/shutdown behavior;
+- do **not** update to 10.6.8 until a matching Atom kernel/update procedure is staged and tested.

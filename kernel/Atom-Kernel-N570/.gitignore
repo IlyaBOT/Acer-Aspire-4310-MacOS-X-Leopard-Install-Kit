@@ -1,0 +1,4 @@
+work/
+artifacts/
+*.log
+.DS_Store

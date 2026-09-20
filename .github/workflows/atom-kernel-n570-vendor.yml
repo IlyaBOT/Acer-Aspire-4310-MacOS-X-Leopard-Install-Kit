@@ -1,0 +1,68 @@
+name: Vendor Atom N570 XNU source
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - Atom-Kernel-N570
+    paths:
+      - kernel/Atom-Kernel-N570/SOURCE.lock
+      - .github/workflows/atom-kernel-n570-vendor.yml
+
+permissions:
+  contents: write
+
+jobs:
+  vendor-xnu:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v4
+        with:
+          ref: Atom-Kernel-N570
+          fetch-depth: 0
+
+      - name: Read source lock
+        id: lock
+        shell: bash
+        run: |
+          set -euo pipefail
+          source kernel/Atom-Kernel-N570/SOURCE.lock
+          echo "repo=$XNU_REPOSITORY" >> "$GITHUB_OUTPUT"
+          echo "commit=$XNU_COMMIT" >> "$GITHUB_OUTPUT"
+          echo "version=$XNU_VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Vendor exact XNU snapshot
+        shell: bash
+        env:
+          XNU_REPOSITORY: ${{ steps.lock.outputs.repo }}
+          XNU_COMMIT: ${{ steps.lock.outputs.commit }}
+        run: |
+          set -euo pipefail
+          dst=kernel/Atom-Kernel-N570/src/xnu
+          if [[ -f "$dst/.xnu-source-commit" ]] && [[ "$(cat "$dst/.xnu-source-commit")" == "$XNU_COMMIT" ]]; then
+            echo "Pinned source already present"
+            exit 0
+          fi
+          rm -rf "$dst" /tmp/xnu-n570
+          git clone --no-checkout "$XNU_REPOSITORY" /tmp/xnu-n570
+          git -C /tmp/xnu-n570 checkout --detach "$XNU_COMMIT"
+          [[ "$(git -C /tmp/xnu-n570 rev-parse HEAD)" == "$XNU_COMMIT" ]]
+          rm -rf /tmp/xnu-n570/.git
+          printf '%s\n' "$XNU_COMMIT" > /tmp/xnu-n570/.xnu-source-commit
+          mkdir -p "$(dirname "$dst")"
+          mv /tmp/xnu-n570 "$dst"
+
+      - name: Commit source snapshot when changed
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- kernel/Atom-Kernel-N570/src/xnu && [[ -z "$(git status --porcelain -- kernel/Atom-Kernel-N570/src/xnu)" ]]; then
+            echo "No source snapshot changes"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add kernel/Atom-Kernel-N570/src/xnu
+          git commit -m "Vendor Apple XNU ${{ steps.lock.outputs.version }} source"
+          git push origin HEAD:Atom-Kernel-N570

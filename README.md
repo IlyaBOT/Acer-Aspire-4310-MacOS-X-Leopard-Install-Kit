@@ -10,15 +10,24 @@ A profile-driven toolkit for building and troubleshooting macOS/OpenCore install
 | --- | --- | --- | --- | --- | --- |
 | Acer Aspire 4310 | supported | supported | planned | — | — |
 | eMachines D640 / Phenom II N930 | — | experimental, **physical target blocked** | planned | planned | planned |
-| ASUS Eee PC 1215P / Atom N570 | — | experimental (10.6.3 first) | planned | — | — |
+| ASUS Eee PC 1215P / Atom N570 | — | experimental, **physical 10.6.3 Installer boot validated** | planned | — | — |
 
-`experimental` means the build/media implementation exists but is not yet a hardware-supported release. `planned` means profile metadata and the installation architecture are defined, but build/destructive operations remain disabled.
+`experimental` means the target is still under bring-up and is not yet a complete hardware-supported release. Some experimental targets may already have partial physical validation, documented below. `planned` means profile metadata and the installation architecture are defined, but build/destructive operations remain disabled.
 
 ### eMachines D640 status
 
 The D640 profile and its Linux USB-writing backend are intentionally preserved, but the current physical test laptop is **not known working**. No successful OpenCore/macOS boot has been reproduced on it after the latest bring-up attempts. The remaining blocker may be failing hardware, unusually incompatible Phoenix legacy-BIOS behavior, or both; that diagnosis is not yet proven. Treat the D640 tooling as research/diagnostic code rather than a working-machine recipe.
 
 The Linux media path itself remains useful: it can inspect a Snow Leopard image, create GPT + FAT32 ESP + HFS+ installer partitions, restore the installer, replace the legacy AMD kernel, install OpenDuet/OpenCore and run read-only verification. See `docs/EMACHINES_D640_LINUX.md` and `scripts/linux_make_usb.sh`.
+
+
+### ASUS Eee PC 1215P status
+
+Physical bring-up on the genuine Atom N570 target reached the functional Mac OS X 10.6.3 Installer GUI/userland using the source-built Darwin 10.3.0 i386 Atom kernel. Direct `sysctl machdep.cpu` output preserved the real CPU identity: family 6, model 28, stepping 10, signature `0x106CA`, 2 cores / 4 threads. The compatibility patch maps model 28 to the historical Yonah CPU-family path without spoofing the actual CPUID model or signature.
+
+Confirmed on the physical machine: OpenDuet/OpenCore handoff, the custom XNU path, native ICH7/NM10 AHCI and the internal Kingston SSD, USB, the internal UVC webcam, PS/2 input, and a usable Installer GUI. The GMA3150 -> GMA950 device-property spoof is visible, but the Apple GMA framebuffer/acceleration kext was not loaded in the captured Installer session; the GUI was running through the generic `IONDRVFramebuffer` path, so QE/CI is not claimed.
+
+The first physical match-trace boot appeared to stop around `IOResources: family specific matching fails`, but the machine was progressing extremely slowly. The major slowdown came from broad synchronous IOKit logging (`io=0x20007f`) plus the temporary match-trace instrumentation. The known-good pre-peripheral source/tooling state is tagged `n570-xnu-10.3.0-physical-r1`. A clean non-MATCHTRACE RELEASE kernel is now the baseline for subsequent hardware work; Ethernet, Wi-Fi, audio and battery remain experimental until their next physical runtime test.
 
 ## Recommended entry point
 
@@ -138,7 +147,7 @@ These use retail DVD/ISO restore paths. The exact backend depends on target and 
 
 On macOS, Acer and ASUS use the existing `diskutil`/`asr` path. The D640 target additionally exposes the experimental Linux backend in `scripts/linux_make_usb.sh`, which prefers a native HFS/HFS+ block clone and falls back to an HFS+ + `rsync` copy when necessary.
 
-The ASUS 1215P Snow Leopard profile starts from retail 10.6.3, IA32 OpenDuet/OpenCore, an i386 Atom-capable custom kernel, native ICH7/NM10 AHCI, PS/2 input and the audited GMA3150/GMA950 framebuffer path.
+The ASUS 1215P Snow Leopard profile starts from retail 10.6.3, IA32 OpenDuet/OpenCore, an i386 Atom-capable custom kernel, native ICH7/NM10 AHCI, PS/2 input and the audited GMA3150/GMA950 framebuffer path. This path has now reached the 10.6.3 Installer GUI/userland on the real Atom N570; post-install behavior and the remaining device drivers are still under validation.
 
 ### Lion / Mountain Lion / Mavericks
 
@@ -192,4 +201,4 @@ That repository contains the reproducible source patch pipeline, Snow Leopard Xc
 
 ## Safety
 
-Disk-writing modes never run implicitly. Always inspect the selected device before `--make-usb`, keep backups, and use `--dry-run` where the selected implementation supports it. Planned profiles remain doctor-only until their hardware kernel/kext path exists. Experimental profiles are not a claim of successful hardware boot. The D640 USB probe is intentionally more destructive than the normal media builder and requires its own explicit invocation.
+Disk-writing modes never run implicitly. Always inspect the selected device before `--make-usb`, keep backups, and use `--dry-run` where the selected implementation supports it. Planned profiles remain doctor-only until their hardware kernel/kext path exists. Experimental profiles are not a claim of complete hardware support; any partial physical validation is documented explicitly per target. The D640 USB probe is intentionally more destructive than the normal media builder and requires its own explicit invocation.
