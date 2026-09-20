@@ -56,7 +56,7 @@ kernel/Atom-Kernel-N570/
 └── work/                              # OBJROOT/SYMROOT/DSTROOT; ignored
 ```
 
-The source snapshot is committed on the `Atom-Kernel-N570` branch. `bootstrap_source.sh` remains as a deterministic fallback and verifies the same pinned commit.
+The source snapshot is committed in this repository. `bootstrap_source.sh` remains as a deterministic fallback and verifies the same pinned commit.
 
 ## Phase 0: source audit
 
@@ -341,98 +341,91 @@ Look for messages such as:
 
 The last emitted marker is the first coarse localization of an early boot failure.
 
-### Physical N570 IOKit match-trace build
+### Physical N570 IOKit match-trace result
 
-The QEMU-validated RELEASE kernel reaches substantially farther on the physical
-ASUS Eee PC 1215P than the original unsupported-CPU path: all four logical CPUs
-start, TSC synchronization completes, and AppleAPICInterruptController is
-started. The current physical-machine stop occurs after the ACPI `bios` nub is
-registered, around repeated `IOResources: family specific matching fails`
-messages. QEMU continues from the same area into AppleSMBIOS and PCI matching.
+The temporary RELEASE_I386 MATCHTRACE build was used to investigate an apparent
+physical stop around `IOResources: family specific matching fails`. It showed
+paired IOKit matching calls continuing past that point, and the real machine
+eventually reached the functional Mac OS X 10.6.3 Installer GUI/userland.
 
-Do not switch back to DEBUG_I386 for this investigation: the DEBUG build
-reintroduces the already-controlled MACH_ASSERT-only pmap assertion. Instead,
-build a RELEASE_I386 kernel with narrow IOKit tracing:
+The apparent “hang” had two independent logging sources:
+
+1. `io=0x20007f` enabled broad attach/probe/start/register/match/config/yield
+   logging and synchronous `IOLog`;
+2. the MATCHTRACE kernel itself added targeted `[N570 ATOM-KERNEL][MATCH]`
+   logging around IOKit matching stages.
+
+On the Atom N570 and the real framebuffer path, that combination produced huge
+log volume and extreme slowdown. It was not evidence that
+`IOResources: family specific matching fails` was a fatal matcher deadlock.
+
+The diagnostic builder remains available when narrow matching traces are
+needed:
 
 ```bash
 bash scripts/build_n570_matchtrace.sh
 bash scripts/test_n570_matchtrace.sh artifacts/n570-matchtrace/mach_kernel
 ```
 
-The builder temporarily patches `iokit/Kernel/IOService.cpp`, builds into a
-separate `work/n570-matchtrace` tree, stores the result under
-`artifacts/n570-matchtrace`, and restores the exact pre-build local
-`IOService.cpp` on exit. The normal Atom changes in `cpuid.h`, `cpuid.c`
-and `i386_init.c` are left untouched.
-
-Tracing is intentionally restricted to the `IOResources` service and the
-`bios` nub. Every line keeps the project-wide prefix and adds `[MATCH]`:
+Known MATCHTRACE artifact used for the physical diagnostic boot:
 
 ```text
-[N570 ATOM-KERNEL][MATCH] P>   passiveMatch entered
-[N570 ATOM-KERNEL][MATCH] P<   passiveMatch returned
-[N570 ATOM-KERNEL][MATCH] F>   family matchPropertyTable entered
-[N570 ATOM-KERNEL][MATCH] F<   family matchPropertyTable returned
-[N570 ATOM-KERNEL][MATCH] L>   module-loaded check entered
-[N570 ATOM-KERNEL][MATCH] L<   module-loaded check returned
-[N570 ATOM-KERNEL][MATCH] A>   driver allocation entered
-[N570 ATOM-KERNEL][MATCH] A<   driver allocation returned
-[N570 ATOM-KERNEL][MATCH] I>   driver init entered
-[N570 ATOM-KERNEL][MATCH] I<   driver init returned
-[N570 ATOM-KERNEL][MATCH] T>   attach entered
-[N570 ATOM-KERNEL][MATCH] T<   attach returned
-[N570 ATOM-KERNEL][MATCH] R>   probe entered
-[N570 ATOM-KERNEL][MATCH] R<   probe returned
-[N570 ATOM-KERNEL][MATCH] D>   detach entered
-[N570 ATOM-KERNEL][MATCH] D<   detach returned
-[N570 ATOM-KERNEL][MATCH] S>   startCandidate entered
-[N570 ATOM-KERNEL][MATCH] S<   startCandidate returned
+SHA256 ef40cac21c541d2c3f88b90ec2c9b69c42776334f9c3ffcf72a45a82ce84e6b2
 ```
 
-The first marker without its matching return marker localizes the blocking
-operation. If all `F>`/`F<` pairs complete but the existing
-`family specific matching fails` line itself truncates, investigate the
-console/kprintf path or another CPU freezing concurrently rather than treating
-the failed match as the fault.
+For normal physical testing, use the non-MATCHTRACE RELEASE kernel instead and
+do not enable `io=0x20007f`.
 
-Stage the diagnostic artifact exactly as any other custom kernel:
+## Phase 4: real ASUS Eee PC 1215P validation
 
-```bash
-sudo bash scripts/stage_kernel.sh artifacts/n570-matchtrace/mach_kernel /path/to/mounted/ESP
-```
+Physical validation on the genuine ASUS Eee PC 1215P has now passed the first
+major milestone: the custom XNU path reaches the functional Mac OS X 10.6.3
+Installer GUI/userland.
 
-## Phase 4: real ASUS Eee PC 1215P test
-
-Keep the vanilla kernel and current known kernel backed up. Mount the actual USB ESP and stage the patched DEBUG kernel:
-
-```bash
-bash scripts/stage_kernel.sh artifacts/n570-debug/mach_kernel /path/to/mounted/ESP
-```
-
-Keep OpenCore on:
+Direct runtime CPU data from `sysctl machdep.cpu` confirmed that the kernel
+did not spoof the processor identity:
 
 ```text
-KernelArch = i386
-CustomKernel = true
+brand:      Intel(R) Atom(TM) CPU N570 @ 1.66GHz
+family:     6
+model:      28
+stepping:   10
+signature:  67274 = 0x106CA
+cores:      2
+threads:    4
 ```
 
-Use verbose/debug boot arguments. Do not change unrelated OpenCore quirks in the same test. Boot the ASUS and record the last visible `[N570 ATOM-KERNEL]` marker. If the physical machine fails earlier than QEMU, compare CPU feature leaves/MSRs, APIC/TSC behavior, ACPI and memory-map differences next.
+The model-28 compatibility path therefore preserves the actual CPUID model and
+signature while routing the XNU CPU-family classification through the
+historical Yonah compatibility family.
 
-To restore the source tree after an experiment:
+The known normal RELEASE kernel is committed at:
 
-```bash
-git restore src/xnu/osfmk/i386/cpuid.h \
-            src/xnu/osfmk/i386/cpuid.c \
-            src/xnu/osfmk/i386/i386_init.c
+```text
+prebuilt/n570-10.3.0/mach_kernel
+SHA256 9d08a50a972f7d6ae41b787bee78b3d3d99001abb5144043a7aee45c65bfc88c
 ```
 
-On older Git versions without `git restore`:
+Use clean physical boot arguments:
 
-```bash
-git checkout -- src/xnu/osfmk/i386/cpuid.h \
-                src/xnu/osfmk/i386/cpuid.c \
-                src/xnu/osfmk/i386/i386_init.c
+```text
+-v keepsyms=1 debug=0x108 arch=i386
 ```
+
+Do not use `io=0x20007f` for normal boots, and do not use `cpus=1` as part
+of the validated baseline.
+
+The pre-peripheral source/tooling state that reached the physical Installer is
+preserved by the annotated tag:
+
+```text
+n570-xnu-10.3.0-physical-r1
+```
+
+Current physical results outside the CPU/kernel path are tracked in
+`profiles/asus-eee-pc-1215p/README.md`. In particular, AHCI, USB, webcam and
+PS/2 input are confirmed; GMA3150 acceleration, Ethernet, Wi-Fi, audio, battery,
+sleep/wake and post-install behavior remain separate device-validation tasks.
 
 ## Rules
 
