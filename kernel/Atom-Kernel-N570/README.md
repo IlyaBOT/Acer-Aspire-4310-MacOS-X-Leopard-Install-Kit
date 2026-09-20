@@ -341,6 +341,66 @@ Look for messages such as:
 
 The last emitted marker is the first coarse localization of an early boot failure.
 
+### Physical N570 IOKit match-trace build
+
+The QEMU-validated RELEASE kernel reaches substantially farther on the physical
+ASUS Eee PC 1215P than the original unsupported-CPU path: all four logical CPUs
+start, TSC synchronization completes, and AppleAPICInterruptController is
+started. The current physical-machine stop occurs after the ACPI `bios` nub is
+registered, around repeated `IOResources: family specific matching fails`
+messages. QEMU continues from the same area into AppleSMBIOS and PCI matching.
+
+Do not switch back to DEBUG_I386 for this investigation: the DEBUG build
+reintroduces the already-controlled MACH_ASSERT-only pmap assertion. Instead,
+build a RELEASE_I386 kernel with narrow IOKit tracing:
+
+```bash
+bash scripts/build_n570_matchtrace.sh
+bash scripts/test_n570_matchtrace.sh artifacts/n570-matchtrace/mach_kernel
+```
+
+The builder temporarily patches `iokit/Kernel/IOService.cpp`, builds into a
+separate `work/n570-matchtrace` tree, stores the result under
+`artifacts/n570-matchtrace`, and restores the exact pre-build local
+`IOService.cpp` on exit. The normal Atom changes in `cpuid.h`, `cpuid.c`
+and `i386_init.c` are left untouched.
+
+Tracing is intentionally restricted to the `IOResources` service and the
+`bios` nub. Every line keeps the project-wide prefix and adds `[MATCH]`:
+
+```text
+[N570 ATOM-KERNEL][MATCH] P>   passiveMatch entered
+[N570 ATOM-KERNEL][MATCH] P<   passiveMatch returned
+[N570 ATOM-KERNEL][MATCH] F>   family matchPropertyTable entered
+[N570 ATOM-KERNEL][MATCH] F<   family matchPropertyTable returned
+[N570 ATOM-KERNEL][MATCH] L>   module-loaded check entered
+[N570 ATOM-KERNEL][MATCH] L<   module-loaded check returned
+[N570 ATOM-KERNEL][MATCH] A>   driver allocation entered
+[N570 ATOM-KERNEL][MATCH] A<   driver allocation returned
+[N570 ATOM-KERNEL][MATCH] I>   driver init entered
+[N570 ATOM-KERNEL][MATCH] I<   driver init returned
+[N570 ATOM-KERNEL][MATCH] T>   attach entered
+[N570 ATOM-KERNEL][MATCH] T<   attach returned
+[N570 ATOM-KERNEL][MATCH] R>   probe entered
+[N570 ATOM-KERNEL][MATCH] R<   probe returned
+[N570 ATOM-KERNEL][MATCH] D>   detach entered
+[N570 ATOM-KERNEL][MATCH] D<   detach returned
+[N570 ATOM-KERNEL][MATCH] S>   startCandidate entered
+[N570 ATOM-KERNEL][MATCH] S<   startCandidate returned
+```
+
+The first marker without its matching return marker localizes the blocking
+operation. If all `F>`/`F<` pairs complete but the existing
+`family specific matching fails` line itself truncates, investigate the
+console/kprintf path or another CPU freezing concurrently rather than treating
+the failed match as the fault.
+
+Stage the diagnostic artifact exactly as any other custom kernel:
+
+```bash
+sudo bash scripts/stage_kernel.sh artifacts/n570-matchtrace/mach_kernel /path/to/mounted/ESP
+```
+
 ## Phase 4: real ASUS Eee PC 1215P test
 
 Keep the vanilla kernel and current known kernel backed up. Mount the actual USB ESP and stage the patched DEBUG kernel:
