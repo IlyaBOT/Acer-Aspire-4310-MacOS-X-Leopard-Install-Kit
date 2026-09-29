@@ -31,7 +31,18 @@ References:
 - https://github.com/acidanthera/OpenCorePkg/tree/master/Utilities/macrecovery
 - https://github.com/dortania/OpenCore-Install-Guide/blob/master/installer-guide/mac-install-recovery.md
 
-The profile hierarchy records `INSTALL_METHOD=online-recovery` for these systems now, but profiles remain `planned` until the target-specific kernel, graphics and kext path has been hardware-validated. The dispatcher will allow `--doctor` for a planned profile but refuses build/destructive operations instead of creating misleading media.
+The profile hierarchy records `INSTALL_METHOD=online-recovery` for these systems. Planned profiles remain doctor-only, but the experimental ASRock FM2A58M-VG3+ / A8-7600 Mavericks target now implements this flow end-to-end on Linux:
+
+```bash
+./legacy_macos_install.sh --target asrock-fm2a58m-vg3-a8-7600 --os mavericks --download
+./legacy_macos_install.sh --target asrock-fm2a58m-vg3-a8-7600 --os mavericks --build
+sudo ./legacy_macos_install.sh --target asrock-fm2a58m-vg3-a8-7600 --os mavericks \
+  --make-usb --disk /dev/sdX
+```
+
+The A8 writer creates a GPT disk with one FAT32 EFI System Partition, copies the X64 UEFI OpenCore tree and `/Kernels/mach_kernel`, then runs the pinned OpenCore 1.0.5 `macrecovery.py` directly against the mounted USB. It requests Mavericks with board ID `Mac-F60DEB81FF30ACF6` and MLB `00000000000FNN100`, writing `RecoveryImage.dmg` and `RecoveryImage.chunklist` under `com.apple.recovery.boot/`.
+
+This path is UEFI-only for normal bring-up. It uses `OpenHfsPlus.efi` rather than `HfsPlusLegacy.efi`; OpenDuet is not installed by `--make-usb` for this target.
 
 ## Legacy BIOS USB probe
 
