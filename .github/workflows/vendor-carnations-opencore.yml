@@ -12,10 +12,17 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: vendor-carnations-opencore
+  cancel-in-progress: true
+
 jobs:
   vendor:
     if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      COMPOSE_PROGRESS: plain
     steps:
       - uses: actions/checkout@v4
         with:
