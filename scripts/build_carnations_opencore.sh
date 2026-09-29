@@ -8,7 +8,8 @@ SOURCE_COMMIT="4d0803b5c1dbb12378e35712b213e531adde1d88"
 AUDK_BRANCH="audk-stable-202502"
 AUDK_COMMIT="f57172652dc48efac882d0cde416676e4fe4f05a"
 SOURCE_DIR="$CACHE_ROOT/src-$SOURCE_COMMIT"
-DIST_DIR="$CACHE_ROOT/$SOURCE_COMMIT"
+LOCAL_PATCH_REV="2"
+DIST_DIR="$CACHE_ROOT/${SOURCE_COMMIT}-r${LOCAL_PATCH_REV}"
 ARCHIVE=""
 BUNDLED_ARCHIVE="${CARNATIONS_OC_BUNDLED_ARCHIVE:-$ROOT_DIR/vendor/carnations-opencore/OpenCore-1.0.5-DEBUG.zip}"
 
@@ -106,8 +107,93 @@ p.write_text(s)
 PY
   done
 
+  python3 - "$SOURCE_DIR/Library/OcMainLib/OpenCoreKernel.c" <<'PY'
+from pathlib import Path
+import sys
+
+p = Path(sys.argv[1])
+s = p.read_text()
+
+needle = '''  Status = OcSafeFileOpen (This, NewHandle, FileName, OpenMode, Attributes);
+
+  DEBUG ((
+    DEBUG_VERBOSE,
+    "OC: Opening file %s with %u mode gave - %r\\n",
+    FileName,
+    (UINT32)OpenMode,
+    Status
+    ));
+
+  //
+  // Hook kernelcache read attempts for fuzzy kernelcache matching.
+'''
+
+patched = '''  Status = OcSafeFileOpen (This, NewHandle, FileName, OpenMode, Attributes);
+
+  DEBUG ((
+    DEBUG_VERBOSE,
+    "OC: Opening file %s with %u mode gave - %r\\n",
+    FileName,
+    (UINT32)OpenMode,
+    Status
+    ));
+
+  //
+  // Mavericks Recovery BaseSystem.dmg may contain only a prelinked
+  // kernelcache and no /mach_kernel. When Cacheless rejects the stock
+  // kernelcache, boot.efi falls back to mach_kernel. Allow CustomKernel
+  // to satisfy that request directly from ESP:/Kernels even when the
+  // original filesystem has no placeholder mach_kernel file.
+  //
+  if (  (Status == EFI_NOT_FOUND)
+     && (OpenMode == EFI_FILE_MODE_READ)
+     && ((Attributes & EFI_FILE_DIRECTORY) == 0)
+     && (mCustomKernelDirectory != NULL))
+  {
+    NewFileName = OcStrrChr (FileName, L'\\');
+    if (NewFileName == NULL) {
+      NewFileName = FileName;
+    } else {
+      NewFileName++;
+    }
+
+    if (StrCmp (NewFileName, L"mach_kernel") == 0) {
+      DEBUG ((DEBUG_INFO, "OC: Original mach_kernel is absent, trying ESP Kernels fallback\\n"));
+
+      mCustomKernelDirectoryInProgress = TRUE;
+      Status = OcSafeFileOpen (
+                 mCustomKernelDirectory,
+                 &EspNewHandle,
+                 NewFileName,
+                 OpenMode,
+                 Attributes
+                 );
+      mCustomKernelDirectoryInProgress = FALSE;
+
+      DEBUG ((DEBUG_INFO, "OC: ESP mach_kernel fallback status: %r\\n", Status));
+
+      if (!EFI_ERROR (Status)) {
+        This       = mCustomKernelDirectory;
+        *NewHandle = EspNewHandle;
+        FileName   = NewFileName;
+      }
+    }
+  }
+
+  //
+  // Hook kernelcache read attempts for fuzzy kernelcache matching.
+'''
+
+if "Original mach_kernel is absent, trying ESP Kernels fallback" not in s:
+    if needle not in s:
+        raise SystemExit("unexpected OpenCoreKernel.c layout; cannot apply Mavericks mach_kernel fallback")
+    s = s.replace(needle, patched, 1)
+
+p.write_text(s)
+PY
+
   rm -rf -- "$SOURCE_DIR/UDK"
-  log "Pinned build dependencies: $AUDK_BRANCH ($AUDK_COMMIT)"
+  log "Pinned build dependencies: $AUDK_BRANCH ($AUDK_COMMIT), local patch r$LOCAL_PATCH_REV"
 }
 
 select_built_archive() {
