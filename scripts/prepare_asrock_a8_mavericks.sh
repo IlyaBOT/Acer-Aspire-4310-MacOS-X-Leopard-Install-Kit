@@ -264,8 +264,10 @@ run_build() {
 
   [[ -f "$oc_dist/X64/EFI/OC/Drivers/OpenRuntime.efi" ]] || die "Modified OpenCore archive is missing OpenRuntime.efi"
   [[ -f "$oc_dist/X64/EFI/OC/Drivers/OpenHfsPlus.efi" ]] || die "Modified OpenCore archive is missing OpenHfsPlus.efi"
+  [[ -f "$oc_dist/X64/EFI/OC/Drivers/OpenPartitionDxe.efi" ]] || die "Modified OpenCore archive is missing OpenPartitionDxe.efi"
   cp -f "$oc_dist/X64/EFI/OC/Drivers/OpenRuntime.efi" "$BUILD_ROOT/ESP/EFI/OC/Drivers/OpenRuntime.efi"
   cp -f "$oc_dist/X64/EFI/OC/Drivers/OpenHfsPlus.efi" "$BUILD_ROOT/ESP/EFI/OC/Drivers/OpenHfsPlus.efi"
+  cp -f "$oc_dist/X64/EFI/OC/Drivers/OpenPartitionDxe.efi" "$BUILD_ROOT/ESP/EFI/OC/Drivers/OpenPartitionDxe.efi"
 
   copy_kexts "$BUILD_ROOT/ESP/EFI/OC"
   validate_kext_arches "$BUILD_ROOT/ESP/EFI/OC"
@@ -289,6 +291,7 @@ run_build() {
     --provide-current-cpu-info
     --blacklist-gpu-pci-path "$TARGET_GPU_INTEGRATED_OC_PATH"
     --driver OpenHfsPlus.efi
+    --driver OpenPartitionDxe.efi
     --driver OpenRuntime.efi
     --kernel-patches-plist "$CACHE_ROOT/amd/10-9-Mavericks.plist"
     --amd-core-count "$TARGET_AMD_PATCH_CORES"
@@ -325,6 +328,7 @@ assert c["Booter"]["Quirks"]["RebuildAppleMemoryMap"] is True
 assert c["Booter"]["Quirks"]["SyncRuntimePermissions"] is True
 drivers={d["Path"] for d in c["UEFI"]["Drivers"] if d.get("Enabled")}
 assert "OpenHfsPlus.efi" in drivers
+assert "OpenPartitionDxe.efi" in drivers
 assert "HfsPlusLegacy.efi" not in drivers
 assert "OpenRuntime.efi" in drivers
 igpu=c["DeviceProperties"]["Add"]["PciRoot(0x0)/Pci(0x1,0x0)"]
@@ -356,9 +360,10 @@ ASRock FM2A58M-VG3+ R2.0 / AMD A8-7600 Mavericks experimental UEFI payload
    UEFI: <USB name>
    OpenDuet/legacy BIOS is not used by this target's normal path.
 
-3. HFS driver:
+3. Recovery DMG drivers:
    OpenHfsPlus.efi
-   HfsPlusLegacy.efi is intentionally not used for the Mavericks Recovery DMG.
+   OpenPartitionDxe.efi (Mavericks RecoveryImage.dmg uses Apple Partition Map)
+   HfsPlusLegacy.efi is intentionally not used.
 
 4. Kernel scheme:
    CustomKernel=YES
