@@ -29,6 +29,7 @@ Usage:
   ./legacy_macos_install.sh --target asus-eee-pc-1215p --os lion --doctor
   ./legacy_macos_install.sh --target asrock-fm2a58m-vg3-a8-7600 --os mavericks --doctor
   ./legacy_macos_install.sh --target asrock-fm2a58m-vg3-a8-7600 --os mavericks --build
+  sudo ./legacy_macos_install.sh --target asrock-fm2a58m-vg3-a8-7600 --os mavericks --make-usb --disk /dev/sdX
 
 Generic x86/x86_64 hardware analysis:
   ./legacy_macos_install.sh --profile universal --doctor

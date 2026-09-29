@@ -14,6 +14,7 @@ OC_BUILDER="$ROOT_DIR/scripts/build_carnations_opencore.sh"
 GENERATOR="$ROOT_DIR/scripts/generate_target_oc_config.py"
 VALIDATOR="$ROOT_DIR/scripts/validate_oc_tree.py"
 KERNEL_INSTALLER="$ROOT_DIR/scripts/apply_mavericks_amd_kernel.sh"
+RECOVERY_USB_WRITER="$ROOT_DIR/scripts/linux_make_recovery_usb.sh"
 CACHE_ROOT="$ROOT_DIR/cache/a8-7600-mavericks"
 OUTPUT_ROOT="$ROOT_DIR/output/targets/$TARGET/mavericks"
 BUILD_ROOT="$OUTPUT_ROOT/opencore-custom"
@@ -23,6 +24,9 @@ KEXT_SET="minimal"
 BOOT_PRESET="verbose"
 OPENCOR_ARCHIVE=""
 VOLUME=""
+DISK=""
+ASSUME_YES=0
+ALLOW_INTERNAL=0
 
 # shellcheck disable=SC1090
 source "$HARDWARE_CONF"
@@ -45,13 +49,17 @@ Read-only:
 Fetch pinned kernel/patch/kext sources:
   ./scripts/prepare_asrock_a8_mavericks.sh --download
 
-Build a ready-to-copy X64 OpenCore/OpenDuet tree:
+Build the X64 UEFI OpenCore tree:
   ./scripts/prepare_asrock_a8_mavericks.sh --build
   ./scripts/prepare_asrock_a8_mavericks.sh --build --kext-set full
 
-If a signed-in GitHub artifact or locally-built Carnations OpenCore archive is
-already available, it can be supplied instead of compiling the fork:
-  ./scripts/prepare_asrock_a8_mavericks.sh --build --opencore-archive /path/to/OpenCore.zip
+The repository-bundled Carnations OpenCore 1.0.5 DEBUG archive is preferred
+automatically. --opencore-archive remains available for an explicit override.
+
+Create a fresh UEFI Mavericks Recovery USB on Linux (DESTRUCTIVE). This copies
+OpenCore + the custom AMD kernel and downloads RecoveryImage.dmg/chunklist with
+the bundled macrecovery.py:
+  sudo ./scripts/prepare_asrock_a8_mavericks.sh --make-usb --disk /dev/sdX
 
 Apply the required DEBUG Mavericks kernel to a writable installer/system root:
   sudo ./scripts/prepare_asrock_a8_mavericks.sh --apply-kernel --volume /mnt/Mavericks
@@ -60,9 +68,12 @@ Options:
   --kext-set minimal|full       minimal: FakeSMC + NullCPUPM + TSC sync + Ethernet
                                 full also adds VoodooHDA and EvOreboot
   --boot-preset normal|verbose|safe|diagnostic
-  --opencore-archive PATH       use an already-built Carnations OpenCore archive
+  --opencore-archive PATH       override the repository-bundled Carnations archive
+  --disk /dev/sdX               whole USB disk for --make-usb
+  --yes                         skip destructive USB confirmation
+  --allow-internal              allow --make-usb on a disk not marked removable
 
-The build is experimental and does not write any disk automatically.
+The build is experimental. Only --make-usb writes a disk, and it is destructive.
 EOF
 }
 
@@ -72,10 +83,14 @@ while (($#)); do
     --download|--download-only) MODE=download ;;
     --build) MODE=build ;;
     --apply-kernel) MODE=apply-kernel ;;
+    --make-usb) MODE=make-usb ;;
     --kext-set) need_value "$@"; shift; KEXT_SET="$1" ;;
     --boot-preset) need_value "$@"; shift; BOOT_PRESET="$1" ;;
     --opencore-archive) need_value "$@"; shift; OPENCOR_ARCHIVE="$1" ;;
     --volume) need_value "$@"; shift; VOLUME="$1" ;;
+    --disk) need_value "$@"; shift; DISK="$1" ;;
+    --yes) ASSUME_YES=1 ;;
+    --allow-internal) ALLOW_INTERNAL=1 ;;
     -h|--help) usage; exit 0 ;;
     *) die "Unknown argument: $1" ;;
   esac
@@ -91,7 +106,6 @@ load_shared_sources() {
   source "$CURRENT_SOURCES"
   LEGACY_KEXTS_ROOT="$ROOT_DIR/cache/$LEGACY_KEXTS_CACHE_REL"
   [[ -d "$LEGACY_KEXTS_ROOT/FAT" ]] || die "Legacy-Kexts cache is incomplete: $LEGACY_KEXTS_ROOT"
-  [[ -n "${HFS_LEGACY_FILE:-}" && -f "$ROOT_DIR/downloads/$HFS_LEGACY_FILE" ]]     || die "HfsPlusLegacy.efi is not cached"
 }
 
 run_doctor() {
@@ -113,7 +127,7 @@ run_doctor() {
     else
       case "$cmd" in
         docker)
-          printf '  WARN    %-10s missing; --build needs Docker unless --opencore-archive is supplied\n' "$cmd"
+          printf '  WARN    %-10s missing; only the source-build fallback needs Docker\n' "$cmd"
           ;;
         unzip|file)
           printf '  WARN    %-10s optional quality/inspection tool missing\n' "$cmd"
@@ -133,8 +147,10 @@ run_doctor() {
 
   if bash "$OC_BUILDER" --print-root >/dev/null 2>&1; then
     printf '  OK      modified Carnations OpenCore cache\n'
+  elif [[ -f "$ROOT_DIR/vendor/carnations-opencore/OpenCore-1.0.5-DEBUG.zip" ]]; then
+    printf '  OK      repository-bundled Carnations OpenCore 1.0.5 DEBUG\n'
   else
-    printf '  WARN    modified Carnations OpenCore not prepared\n'
+    printf '  WARN    bundled Carnations OpenCore archive is missing; Docker fallback would be required\n'
   fi
 
   printf '\nRequired profile facts:\n'
@@ -237,18 +253,19 @@ run_build() {
   [[ -d "$oc_dist" ]] || die "Modified OpenCore cache not found: $oc_dist"
 
   rm -rf -- "$BUILD_ROOT"
-  mkdir -p "$BUILD_ROOT/ESP/EFI/BOOT"            "$BUILD_ROOT/ESP/EFI/OC/Drivers"            "$BUILD_ROOT/ESP/EFI/OC/Kexts"            "$BUILD_ROOT/OpenDuet"            "$BUILD_ROOT/Payload"
+  mkdir -p "$BUILD_ROOT/ESP/EFI/BOOT" \
+           "$BUILD_ROOT/ESP/EFI/OC/Drivers" \
+           "$BUILD_ROOT/ESP/EFI/OC/Kexts" \
+           "$BUILD_ROOT/ESP/Kernels" \
+           "$BUILD_ROOT/Payload"
 
   cp -f "$oc_dist/X64/EFI/BOOT/BOOTx64.efi" "$BUILD_ROOT/ESP/EFI/BOOT/BOOTX64.efi"
   cp -f "$oc_dist/X64/EFI/OC/OpenCore.efi" "$BUILD_ROOT/ESP/EFI/OC/OpenCore.efi"
-  cp -f "$ROOT_DIR/downloads/$HFS_LEGACY_FILE" "$BUILD_ROOT/ESP/EFI/OC/Drivers/HfsPlusLegacy.efi"
 
-  [[ -f "$oc_dist/X64/EFI/OC/Drivers/OpenRuntime.efi" ]]     || die "Modified OpenCore archive is missing OpenRuntime.efi"
+  [[ -f "$oc_dist/X64/EFI/OC/Drivers/OpenRuntime.efi" ]] || die "Modified OpenCore archive is missing OpenRuntime.efi"
+  [[ -f "$oc_dist/X64/EFI/OC/Drivers/OpenHfsPlus.efi" ]] || die "Modified OpenCore archive is missing OpenHfsPlus.efi"
   cp -f "$oc_dist/X64/EFI/OC/Drivers/OpenRuntime.efi" "$BUILD_ROOT/ESP/EFI/OC/Drivers/OpenRuntime.efi"
-
-  for f in boot0 boot1f32 bootX64; do
-    cp -f "$oc_dist/Utilities/LegacyBoot/$f" "$BUILD_ROOT/OpenDuet/$f"
-  done
+  cp -f "$oc_dist/X64/EFI/OC/Drivers/OpenHfsPlus.efi" "$BUILD_ROOT/ESP/EFI/OC/Drivers/OpenHfsPlus.efi"
 
   copy_kexts "$BUILD_ROOT/ESP/EFI/OC"
   validate_kext_arches "$BUILD_ROOT/ESP/EFI/OC"
@@ -267,10 +284,11 @@ run_build() {
     --kernel-arch x86_64
     --kernel-cache Cacheless
     --boot-preset "$BOOT_PRESET"
-    --runtime-profile legacy
+    --runtime-profile modern
+    --custom-kernel
     --provide-current-cpu-info
     --blacklist-gpu-pci-path "$TARGET_GPU_INTEGRATED_OC_PATH"
-    --driver HfsPlusLegacy.efi
+    --driver OpenHfsPlus.efi
     --driver OpenRuntime.efi
     --kernel-patches-plist "$CACHE_ROOT/amd/10-9-Mavericks.plist"
     --amd-core-count "$TARGET_AMD_PATCH_CORES"
@@ -281,6 +299,8 @@ run_build() {
   python3 "$VALIDATOR" "$BUILD_ROOT/ESP/EFI/OC/config.plist"
 
   cp -f "$CACHE_ROOT/amd/mach_kernel" "$BUILD_ROOT/Payload/mach_kernel"
+  cp -f "$CACHE_ROOT/amd/mach_kernel" "$BUILD_ROOT/ESP/Kernels/mach_kernel"
+  chmod 0644 "$BUILD_ROOT/Payload/mach_kernel" "$BUILD_ROOT/ESP/Kernels/mach_kernel"
   cp -f "$CACHE_ROOT/amd/10-9-Mavericks.plist" "$BUILD_ROOT/Payload/10-9-Mavericks.source.plist"
   cp -f "$KERNEL_INSTALLER" "$BUILD_ROOT/Payload/apply_mavericks_amd_kernel.sh"
   chmod 0755 "$BUILD_ROOT/Payload/apply_mavericks_amd_kernel.sh"
@@ -293,8 +313,16 @@ with open(path,"rb") as f: c=plistlib.load(f)
 assert c["Booter"]["Quirks"]["FixupAppleEfiImages"] is True
 assert c["Kernel"]["Quirks"]["ProvideCurrentCpuInfo"] is True
 assert c["Kernel"]["Emulate"]["DummyPowerManagement"] is True
+assert c["Kernel"]["Scheme"]["CustomKernel"] is True
 assert c["Kernel"]["Scheme"]["KernelArch"] == "x86_64"
 assert c["Kernel"]["Scheme"]["KernelCache"] == "Cacheless"
+assert c["Booter"]["Quirks"]["EnableWriteUnprotector"] is False
+assert c["Booter"]["Quirks"]["RebuildAppleMemoryMap"] is True
+assert c["Booter"]["Quirks"]["SyncRuntimePermissions"] is True
+drivers={d["Path"] for d in c["UEFI"]["Drivers"] if d.get("Enabled")}
+assert "OpenHfsPlus.efi" in drivers
+assert "HfsPlusLegacy.efi" not in drivers
+assert "OpenRuntime.efi" in drivers
 igpu=c["DeviceProperties"]["Add"]["PciRoot(0x0)/Pci(0x1,0x0)"]
 assert igpu["name"] == "unused"
 assert igpu["IOName"] == "#display"
@@ -314,41 +342,67 @@ print(f"A8 Mavericks config validation: PASS ({len(patches)} AMD kernel patches,
 PY
 
   cat > "$BUILD_ROOT/Payload/README.txt" <<EOF
-ASRock FM2A58M-VG3+ R2.0 / AMD A8-7600 Mavericks experimental payload
+ASRock FM2A58M-VG3+ R2.0 / AMD A8-7600 Mavericks experimental UEFI payload
 
-1. EFI is under:
+1. UEFI boot tree:
    ESP/EFI/
+   ESP/Kernels/mach_kernel
 
-2. Because the board is legacy BIOS/CSM, install OpenDuet using:
-   scripts/linux_install_openduet.sh
-   The required boot0/boot1f32/bootX64 files are staged in OpenDuet/.
+2. Boot firmware entry:
+   UEFI: <USB name>
+   OpenDuet/legacy BIOS is not used by this target's normal path.
 
-3. The Carnations Botanica Mavericks patch set is already merged into
-   EFI/OC/config.plist. cpuid_cores_per_package is specialized for 4 physical
-   cores. ProvideCurrentCpuInfo and FixupAppleEfiImages are enabled.
+3. HFS driver:
+   OpenHfsPlus.efi
+   HfsPlusLegacy.efi is intentionally not used for the Mavericks Recovery DMG.
 
-4. The upstream Mavericks path requires the DEBUG mach_kernel. Apply Payload/mach_kernel
-   to /mach_kernel of the writable installer/system root. The project helper is:
-   Payload/apply_mavericks_amd_kernel.sh --volume /path/to/root
+4. Kernel scheme:
+   CustomKernel=YES
+   KernelArch=x86_64
+   KernelCache=Cacheless
 
-5. First boot uses KernelCache=Cacheless so OpenCore loads the DEBUG kernel and
-   injected kexts without relying on an old prelinked kernelcache.
+5. The Carnations Botanica Mavericks patch set is merged into config.plist.
+   cpuid_cores_per_package is specialized for 4 physical cores.
 
-6. VoodooTSCSync is required. Its IOCPUNumber is set to 3 for this 4-core A8-7600.
+6. UEFI memory profile:
+   EnableWriteUnprotector=NO
+   RebuildAppleMemoryMap=YES
+   SyncRuntimePermissions=YES
+   SetupVirtualMap=NO
 
-7. The Kaveri Radeon R7 iGPU (1002:1313, PCI 00:01.0) is explicitly blacklisted
-   at PciRoot(0x0)/Pci(0x1,0x0). OpenCore injects name=unused, IOName=#display,
-   class-code=FFFFFFFF and vendor/device IDs FFFF so macOS graphics drivers do
-   not match/initialise it even when firmware still exposes the PCI function.
-   The discrete Radeon HD 6670/7670 (1002:6758) remains untouched.
+7. VoodooTSCSync IOCPUNumber=3 for the 4-core A8-7600.
 
-8. Audio remains experimental because the Linux audit identified the HDA PCI
-   controller but not the actual codec. Use --kext-set full to include VoodooHDA.
+8. The Kaveri Radeon R7 iGPU (1002:1313, PCI 00:01.0) is blacklisted at
+   PciRoot(0x0)/Pci(0x1,0x0). The discrete Turks XT 1002:6758 remains untouched.
+
+9. Create the complete Recovery USB with:
+   sudo ./legacy_macos_install.sh --target $TARGET --os mavericks --make-usb --disk /dev/sdX
 EOF
 
   log "Build complete: $BUILD_ROOT"
-  log "EFI: $BUILD_ROOT/ESP/EFI"
-  log "DEBUG kernel payload: $BUILD_ROOT/Payload/mach_kernel"
+  log "UEFI: $BUILD_ROOT/ESP/EFI"
+  log "Custom kernel: $BUILD_ROOT/ESP/Kernels/mach_kernel"
+}
+
+run_make_usb() {
+  [[ -n "$DISK" ]] || die "--make-usb requires --disk /dev/sdX"
+  [[ -f "$BUILD_ROOT/ESP/EFI/OC/config.plist" ]] || die "Build is missing; run --build first"
+  [[ -f "$RECOVERY_USB_WRITER" ]] || die "Recovery USB writer is missing: $RECOVERY_USB_WRITER"
+
+  local oc_dist
+  oc_dist="$(bash "$OC_BUILDER" --ensure | tail -n1)"
+  [[ -f "$oc_dist/Utilities/macrecovery/macrecovery.py" ]] || die "macrecovery.py missing from pinned OpenCore distribution"
+
+  local args=(
+    --make-usb
+    --disk "$DISK"
+    --build-root "$BUILD_ROOT"
+    --macrecovery "$oc_dist/Utilities/macrecovery/macrecovery.py"
+  )
+  (( ASSUME_YES == 1 )) && args+=(--yes)
+  (( ALLOW_INTERNAL == 1 )) && args+=(--allow-internal)
+
+  exec bash "$RECOVERY_USB_WRITER" "${args[@]}"
 }
 
 case "$MODE" in
@@ -360,5 +414,6 @@ case "$MODE" in
     [[ -f "$CACHE_ROOT/amd/mach_kernel" ]] || bash "$ASSET_DOWNLOADER"
     exec bash "$KERNEL_INSTALLER" --volume "$VOLUME" --kernel "$CACHE_ROOT/amd/mach_kernel"
     ;;
+  make-usb) run_make_usb ;;
   "") usage; exit 2 ;;
 esac

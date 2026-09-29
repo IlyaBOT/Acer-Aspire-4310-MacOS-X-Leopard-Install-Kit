@@ -60,11 +60,17 @@ VoodooTSCSync (with `IOCPUNumber=3`) and legacy RealtekRTL8111 1.2.3.
 VoodooHDA is available only in the full set because the captured Linux profile
 identified the HDA PCI controllers but did not contain the actual codec ID.
 
-The upstream AMD project currently requires its modified OpenCore fork. This
-target pins `Carnations-Botanica/OpenCorePkg` royalDevelopment commit
-`4d0803b5c1dbb12378e35712b213e531adde1d88`. On Linux, `--build` can build
-that fork with Docker; an already downloaded/built OpenCore archive can instead
-be passed with `--opencore-archive`.
+The upstream AMD project requires its modified OpenCore fork. This target pins
+`Carnations-Botanica/OpenCorePkg` royalDevelopment commit
+`4d0803b5c1dbb12378e35712b213e531adde1d88` and uses the repository-bundled
+X64 OpenCore 1.0.5 DEBUG archive by default. Docker is only a source-build
+fallback. The normal A8 path is native UEFI: `EFI/BOOT/BOOTX64.efi` launches
+OpenCore directly; OpenDuet/legacy BIOS is not used.
+
+The A8 Mavericks build uses `OpenHfsPlus.efi` instead of
+`HfsPlusLegacy.efi`, enables the modern UEFI memory-map profile, and stages
+the AMD DEBUG kernel as `/Kernels/mach_kernel` with
+`Kernel -> Scheme -> CustomKernel = True`.
 
 First bring-up uses the discrete Radeon HD 6670/7670. Because this board still
 exposes the Kaveri iGPU as PCI 00:01.0 even when firmware setup says it is
@@ -75,14 +81,22 @@ properties (`name=unused`, `IOName=#display`, `class-code=FFFFFFFF`,
 Kaveri 1002:1313 function and leaves the Turks XT 1002:6758 dGPU untouched.
 
 ```bash
-./legacy_macos_install.sh --target asrock-fm2a58m-vg3-a8-7600 --os mavericks --doctor
+# 1. Download/cache target dependencies.
 ./legacy_macos_install.sh --target asrock-fm2a58m-vg3-a8-7600 --os mavericks --download
+
+# 2. Build the UEFI OpenCore tree with OpenHfsPlus + custom AMD mach_kernel.
 ./legacy_macos_install.sh --target asrock-fm2a58m-vg3-a8-7600 --os mavericks --build
 
-# after a writable Mavericks installer/system root is mounted:
+# 3. DESTRUCTIVE: create GPT/FAT32 UEFI USB and download Mavericks Recovery
+#    directly to com.apple.recovery.boot with OpenCore macrecovery.py.
 sudo ./legacy_macos_install.sh --target asrock-fm2a58m-vg3-a8-7600 --os mavericks \
-  --apply-kernel --volume /mnt/Mavericks
+  --make-usb --disk /dev/sdX
 ```
+
+The USB writer downloads Mavericks with the pinned OpenCore 1.0.5
+`macrecovery.py` using the known Mavericks recovery identifiers and writes
+`RecoveryImage.dmg` plus `RecoveryImage.chunklist` directly to the USB.
+Boot the finished stick through the motherboard's **UEFI** USB entry.
 
 The target is not marked working until a real Mavericks boot is reproduced.
 

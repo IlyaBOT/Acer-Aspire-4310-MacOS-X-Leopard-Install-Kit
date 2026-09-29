@@ -1,0 +1,85 @@
+name: Vendor Carnations OpenCore 1.0.5 DEBUG
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/vendor-carnations-opencore.yml'
+      - 'scripts/build_carnations_opencore.sh'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  vendor:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check whether archive is already committed
+        id: check
+        shell: bash
+        run: |
+          if [[ -f vendor/carnations-opencore/OpenCore-1.0.5-DEBUG.zip ]]; then
+            echo "needed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "needed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build pinned Carnations OpenCore
+        if: steps.check.outputs.needed == 'true'
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          bash scripts/build_carnations_opencore.sh --ensure
+          python3 - <<'PY'
+          from pathlib import Path
+          import shutil
+          import zipfile
+
+          commit = "4d0803b5c1dbb12378e35712b213e531adde1d88"
+          root = Path("cache/carnations-opencore") / f"src-{commit}" / "Binaries"
+          required = {
+              "X64/EFI/OC/OpenCore.efi",
+              "X64/EFI/BOOT/BOOTx64.efi",
+              "X64/EFI/OC/Drivers/OpenRuntime.efi",
+              "X64/EFI/OC/Drivers/OpenHfsPlus.efi",
+              "Docs/Sample.plist",
+              "Utilities/macrecovery/macrecovery.py",
+          }
+          candidates = []
+          for p in root.glob("*.zip"):
+              try:
+                  with zipfile.ZipFile(p) as zf:
+                      names = set(zf.namelist())
+              except zipfile.BadZipFile:
+                  continue
+              if required <= names:
+                  score = 2 if "DEBUG" in p.name.upper() else 1
+                  candidates.append((score, p.name, p))
+          if not candidates:
+              raise SystemExit(f"No usable OpenCore archive under {root}")
+          candidates.sort()
+          src = candidates[-1][2]
+          dest = Path("vendor/carnations-opencore/OpenCore-1.0.5-DEBUG.zip")
+          dest.parent.mkdir(parents=True, exist_ok=True)
+          shutil.copyfile(src, dest)
+          print(f"Vendored {src} -> {dest}")
+          PY
+          sha256sum vendor/carnations-opencore/OpenCore-1.0.5-DEBUG.zip             | tee vendor/carnations-opencore/OpenCore-1.0.5-DEBUG.zip.sha256
+
+      - name: Commit vendored archive
+        if: steps.check.outputs.needed == 'true'
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -f             vendor/carnations-opencore/OpenCore-1.0.5-DEBUG.zip             vendor/carnations-opencore/OpenCore-1.0.5-DEBUG.zip.sha256
+          git commit -m "Vendor Carnations OpenCore 1.0.5 DEBUG"
+          git push origin HEAD:main
