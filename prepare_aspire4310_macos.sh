@@ -4,7 +4,8 @@ set -Eeuo pipefail
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 ROOT_DIR="$SCRIPT_DIR"
 CONFIG_DIR="$ROOT_DIR/config"
-PROFILES_DIR="$ROOT_DIR/profiles"
+PROFILE_TARGET="${ASPIRE4310_PROFILE_TARGET:-acer-aspire-4310}"
+PROFILES_DIR="$ROOT_DIR/profiles/$PROFILE_TARGET"
 INPUT_DIR="$ROOT_DIR/input"
 DOWNLOADS_DIR="$ROOT_DIR/downloads"
 CACHE_DIR="$ROOT_DIR/cache"
@@ -20,10 +21,25 @@ XNU_BUNDLE_PACKAGER="$ROOT_DIR/scripts/package_xnu_build_bundle.sh"
 XNU_QEMU_VM="$ROOT_DIR/scripts/xnu_qemu_vm.sh"
 
 # Project-owned constant files.
+# Keep the historical config as the stock fallback, then allow a dispatcher-selected
+# Aspire 4310 hardware variant to replace only the target facts.
 # shellcheck disable=SC1091
 source "$CONFIG_DIR/aspire4310.conf"
+if [[ "$PROFILE_TARGET" != "acer-aspire-4310" ]]; then
+  [[ -f "$PROFILES_DIR/hardware.conf" ]] || {
+    printf 'Unknown Aspire 4310 profile target: %s\n' "$PROFILE_TARGET" >&2
+    exit 1
+  }
+  # shellcheck disable=SC1090
+  source "$PROFILES_DIR/hardware.conf"
+fi
 # shellcheck disable=SC1091
 source "$CONFIG_DIR/sources.conf"
+
+PROFILE_OUTPUT_DIR="$OUTPUT_DIR"
+if [[ "$PROFILE_TARGET" != "acer-aspire-4310" ]]; then
+  PROFILE_OUTPUT_DIR="$OUTPUT_DIR/$PROFILE_TARGET"
+fi
 
 MODE=""
 OS_PROFILE="leopard"
@@ -727,19 +743,24 @@ custom_kernel_available() {
 
 collect_kext_arguments() {
   local oc_root="$1" relative
-  # FakeSMC plugins such as CPUi resolve symbols exported by FakeSMC but do not
-  # declare a formal OSBundleLibraries dependency on org.netkas.fakesmc. Keep
-  # FakeSMC first in Kernel/Add, then retain deterministic lexical ordering.
-  while IFS= read -r relative; do
-    [[ -n "$relative" ]] || continue
-    case "$relative" in
-      fakesmc.kext) printf '0\t%s\n' "$relative" ;;
-      *) printf '1\t%s\n' "$relative" ;;
-    esac
-  done < <(
+  if [[ "${KEXT_ORDER_SMC_FIRST:-NO}" == "YES" ]]; then
+    # CPUi and similar period FakeSMC plugins may resolve symbols exported by FakeSMC
+    # without declaring a formal OSBundleLibraries dependency. Only profiles that opt
+    # in change ordering; the stock Celeron profile retains its historical behavior.
+    while IFS= read -r relative; do
+      [[ -n "$relative" ]] || continue
+      case "$relative" in
+        fakesmc.kext) printf '0\t%s\n' "$relative" ;;
+        *) printf '1\t%s\n' "$relative" ;;
+      esac
+    done < <(
+      find "$oc_root/Kexts" -type d -name '*.kext' -print 2>/dev/null \
+        | sed "s#^$oc_root/Kexts/##"
+    ) | LC_ALL=C sort | cut -f2-
+  else
     find "$oc_root/Kexts" -type d -name '*.kext' -print 2>/dev/null \
-      | sed "s#^$oc_root/Kexts/##"
-  ) | LC_ALL=C sort | cut -f2-
+      | sed "s#^$oc_root/Kexts/##" | LC_ALL=C sort
+  fi
 }
 
 collect_acpi_arguments() {
@@ -786,7 +807,7 @@ Generated: $(date -u '+%Y-%m-%dT%H:%M:%SZ')
 ## Target
 
 - Model: $TARGET_MODEL
-- CPU: $TARGET_CPU (CPUID $TARGET_CPU_CPUID; one physical core; Intel 64 and SSSE3)
+- CPU: $TARGET_CPU (CPUID $TARGET_CPU_CPUID; ${TARGET_CPU_CORES:-1} physical core(s), ${TARGET_CPU_THREADS:-1} thread(s); Intel 64 and SSSE3)
 - Chipset/GPU: $TARGET_CHIPSET / $TARGET_GPU
 
 ## OS and bootloader
@@ -865,7 +886,7 @@ EOF
 
 build_opencore_variant() {
   local kernel_variant="$1"
-  local build_root="$OUTPUT_DIR/$OS_PROFILE/opencore-$kernel_variant"
+  local build_root="$PROFILE_OUTPUT_DIR/$OS_PROFILE/opencore-$kernel_variant"
   local esp="$build_root/ESP" oc_root="$build_root/ESP/EFI/OC"
   local arch_source="$OC_CACHE_ROOT/$OC_ARCH_DIR"
   local validation=""
@@ -1010,7 +1031,7 @@ EOF
 }
 
 build_chameleon() {
-  local build_root="$OUTPUT_DIR/$OS_PROFILE/chameleon"
+  local build_root="$PROFILE_OUTPUT_DIR/$OS_PROFILE/chameleon"
   local i386
   prepare_chameleon_manual_archive || die "Chameleon is lost-media fallback only. Supply input/chameleon/chameleon-binaries.tar.gz with i386/boot0, boot1h and boot."
   i386="$(find_chameleon_i386)"
@@ -1265,7 +1286,7 @@ run_make_usb() {
   run_build
   deploy_variant="vanilla"
   [[ "$KERNEL_MODE" == "custom" ]] && deploy_variant="custom"
-  build_root="$OUTPUT_DIR/$OS_PROFILE/opencore-$deploy_variant"
+  build_root="$PROFILE_OUTPUT_DIR/$OS_PROFILE/opencore-$deploy_variant"
   [[ -f "$build_root/ESP/EFI/OC/config.plist" ]] || die "Expected deployment build is missing: $build_root"
   assert_safe_target_disk "$DISK"
   if [[ "$USB_LAYOUT" == "preserve" ]]; then
@@ -1332,7 +1353,7 @@ run_update_efi() {
   run_build
   deploy_variant="vanilla"
   [[ "$KERNEL_MODE" == "custom" ]] && deploy_variant="custom"
-  build_root="$OUTPUT_DIR/$OS_PROFILE/opencore-$deploy_variant"
+  build_root="$PROFILE_OUTPUT_DIR/$OS_PROFILE/opencore-$deploy_variant"
   [[ -f "$build_root/ESP/EFI/OC/config.plist" ]] \
     || die "Expected deployment build is missing: $build_root"
   assert_safe_target_disk "$DISK"
