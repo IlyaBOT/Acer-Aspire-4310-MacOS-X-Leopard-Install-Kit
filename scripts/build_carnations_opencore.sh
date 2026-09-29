@@ -43,6 +43,7 @@ validate_root() {
   [[ -f "$root/Docs/Sample.plist" ]] || return 1
   [[ -f "$root/X64/EFI/OC/Drivers/OpenRuntime.efi" ]] || return 1
   [[ -f "$root/X64/EFI/OC/Drivers/OpenHfsPlus.efi" ]] || return 1
+  [[ -f "$root/X64/EFI/OC/Drivers/OpenPartitionDxe.efi" ]] || return 1
   [[ -f "$root/Utilities/macrecovery/macrecovery.py" ]] || return 1
   [[ -f "$root/Utilities/LegacyBoot/bootX64" ]] || return 1
   [[ -f "$root/Utilities/LegacyBoot/boot0" ]] || return 1
@@ -118,6 +119,7 @@ required={
     "X64/EFI/OC/OpenCore.efi",
     "X64/EFI/BOOT/BOOTx64.efi",
     "Docs/Sample.plist",
+    "X64/EFI/OC/Drivers/OpenPartitionDxe.efi",
     "Utilities/LegacyBoot/bootX64",
     "Utilities/LegacyBoot/boot0",
     "Utilities/LegacyBoot/boot1f32",
