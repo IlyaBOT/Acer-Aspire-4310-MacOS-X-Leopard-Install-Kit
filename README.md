@@ -126,9 +126,16 @@ strategy. See [docs/GENERIC_X86_PROFILE.md](docs/GENERIC_X86_PROFILE.md).
 Acer Aspire 4310 examples:
 
 ```bash
+# Stock machine: Celeron M 520 profile remains unchanged.
 ./legacy_macos_install.sh --target acer-aspire-4310 --os leopard --doctor
 ./legacy_macos_install.sh --target acer-aspire-4310 --os snowleopard --download
 ./legacy_macos_install.sh --target acer-aspire-4310 --os snowleopard --build
+
+# CPU-upgraded machine: separate Core 2 Duo T7400 target.
+./legacy_macos_install.sh --target acer-aspire-4310-c2d-t7400 --os snowleopard --doctor
+./legacy_macos_install.sh --target acer-aspire-4310-c2d-t7400 --os snowleopard \
+  --build --kext-set sensors
+
 ./legacy_macos_install.sh --target acer-aspire-4310 --os snowleopard \
   --make-usb --disk /dev/diskX --retail input/SnowLeopard-Retail.iso
 ```
@@ -199,6 +206,12 @@ profiles/
       kexts.conf
     lion/
       profile.conf
+
+  acer-aspire-4310-c2d-t7400/
+    hardware.conf
+    snowleopard/
+      profile.conf
+      kexts.conf
 
   emachines-d640-n930/
     hardware.conf
