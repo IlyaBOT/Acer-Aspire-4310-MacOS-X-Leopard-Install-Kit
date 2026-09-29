@@ -21,21 +21,12 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Check whether archive is already committed
-        id: check
-        shell: bash
-        run: |
-          if [[ -f vendor/carnations-opencore/OpenCore-1.0.5-DEBUG.zip ]]; then
-            echo "needed=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "needed=true" >> "$GITHUB_OUTPUT"
-          fi
-
       - name: Build pinned Carnations OpenCore
-        if: steps.check.outputs.needed == 'true'
         shell: bash
         run: |
           set -Eeuo pipefail
+          rm -f vendor/carnations-opencore/OpenCore-1.0.5-DEBUG.zip
+          rm -rf cache/carnations-opencore
           bash scripts/build_carnations_opencore.sh --ensure
           python3 - <<'PY'
           from pathlib import Path
@@ -49,6 +40,7 @@ jobs:
               "X64/EFI/BOOT/BOOTx64.efi",
               "X64/EFI/OC/Drivers/OpenRuntime.efi",
               "X64/EFI/OC/Drivers/OpenHfsPlus.efi",
+              "X64/EFI/OC/Drivers/OpenPartitionDxe.efi",
               "Docs/Sample.plist",
               "Utilities/macrecovery/macrecovery.py",
           }
@@ -74,12 +66,15 @@ jobs:
           sha256sum vendor/carnations-opencore/OpenCore-1.0.5-DEBUG.zip             | tee vendor/carnations-opencore/OpenCore-1.0.5-DEBUG.zip.sha256
 
       - name: Commit vendored archive
-        if: steps.check.outputs.needed == 'true'
         shell: bash
         run: |
           set -Eeuo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -f             vendor/carnations-opencore/OpenCore-1.0.5-DEBUG.zip             vendor/carnations-opencore/OpenCore-1.0.5-DEBUG.zip.sha256
-          git commit -m "Vendor Carnations OpenCore 1.0.5 DEBUG"
-          git push origin HEAD:main
+          if git diff --cached --quiet; then
+            echo "Vendored archive unchanged"
+          else
+            git commit -m "Vendor patched Carnations OpenCore 1.0.5 DEBUG"
+            git push origin HEAD:main
+          fi
