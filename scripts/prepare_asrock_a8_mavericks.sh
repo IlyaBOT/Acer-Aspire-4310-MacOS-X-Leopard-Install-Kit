@@ -296,11 +296,15 @@ run_build() {
   generator_args+=("${KEXT_ARGS[@]}")
 
   python3 "$GENERATOR" "${generator_args[@]}"
-  python3 "$VALIDATOR" "$BUILD_ROOT/ESP/EFI/OC/config.plist"
 
+  # CustomKernel validation checks the finished ESP tree, so stage the AMD
+  # mach_kernel before validate_oc_tree.py runs.
   cp -f "$CACHE_ROOT/amd/mach_kernel" "$BUILD_ROOT/Payload/mach_kernel"
   cp -f "$CACHE_ROOT/amd/mach_kernel" "$BUILD_ROOT/ESP/Kernels/mach_kernel"
   chmod 0644 "$BUILD_ROOT/Payload/mach_kernel" "$BUILD_ROOT/ESP/Kernels/mach_kernel"
+
+  python3 "$VALIDATOR" "$BUILD_ROOT/ESP/EFI/OC/config.plist"
+
   cp -f "$CACHE_ROOT/amd/10-9-Mavericks.plist" "$BUILD_ROOT/Payload/10-9-Mavericks.source.plist"
   cp -f "$KERNEL_INSTALLER" "$BUILD_ROOT/Payload/apply_mavericks_amd_kernel.sh"
   chmod 0755 "$BUILD_ROOT/Payload/apply_mavericks_amd_kernel.sh"
