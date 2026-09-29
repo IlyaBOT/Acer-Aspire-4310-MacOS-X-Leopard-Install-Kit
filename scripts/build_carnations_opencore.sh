@@ -295,10 +295,10 @@ build_from_source() {
 
   prepare_source_compat
 
-  log "Building OpenDuet from pinned Carnations Botanica fork against $AUDK_BRANCH"
-  (cd "$SOURCE_DIR" && docker compose run --rm build-duet)
-  log "Building OpenCore from pinned Carnations Botanica fork against $AUDK_BRANCH"
-  (cd "$SOURCE_DIR" && docker compose run --rm build-oc)
+  log "Building OpenDuet X64 DEBUG from pinned Carnations Botanica fork against $AUDK_BRANCH"
+  (cd "$SOURCE_DIR" && TARGETS=DEBUG ARCHS=X64 docker compose run --rm -T build-duet)
+  log "Building OpenCore X64 DEBUG from pinned Carnations Botanica fork against $AUDK_BRANCH"
+  (cd "$SOURCE_DIR" && TARGETS=DEBUG ARCHS=X64 docker compose run --rm -T build-oc)
 
   built="$(select_built_archive)"
   log "Selected built archive: $built"
