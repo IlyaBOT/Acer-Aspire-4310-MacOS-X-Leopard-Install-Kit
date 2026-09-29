@@ -130,7 +130,7 @@ jobs:
           grep -q '68cc1f3cae39ae0e85abb00b9ab6c0c81d5b4d28' scripts/download_carnations_amd_kernel.sh
           grep -q 'cfdf0513edd8c57ed7f9b7c2d1f90090425b00fd' scripts/download_carnations_amd_kernel.sh
           grep -q -- '--os mavericks --output "$AMD_ROOT/mach_kernel"' scripts/download_a8_mavericks_assets.sh
-          ./scripts/download_carnations_amd_kernel.sh --help | grep -q 'snowleopard | lion | mountainlion | mavericks'
+          bash scripts/download_carnations_amd_kernel.sh --help | grep -q 'snowleopard | lion | mountainlion | mavericks'
 
       - name: Validate A8-7600 Mavericks AMD profile and patch specialization
         run: |
