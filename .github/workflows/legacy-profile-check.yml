@@ -124,7 +124,7 @@ jobs:
         run: |
           grep -q '^PROFILE_STATUS=experimental$' profiles/asrock-fm2a58m-vg3-a8-7600/mavericks/profile.conf
           grep -q '^TARGET_CPU_CORES="4"$' profiles/asrock-fm2a58m-vg3-a8-7600/hardware.conf
-          grep -q '^TARGET_OPENCORE_ARCH="X64"
+          grep -q '^TARGET_OPENCORE_ARCH="X64"          grep -q 'VoodooTSCSync.kext' profiles/asrock-fm2a58m-vg3-a8-7600/mavericks/kexts.conf
           grep -q 'RealtekRTL8111.kext' profiles/asrock-fm2a58m-vg3-a8-7600/mavericks/kexts.conf
           python3 - <<'PY'
           import importlib.util
@@ -251,7 +251,7 @@ jobs:
               assert cfg['NVRAM']['Add']['7C436110-AB2A-4BBB-A880-FE41995C9F82']['boot-args'].split().count('arch=i386') == 1
           print('ASUS config postprocessor: PASS')
           PY profiles/asrock-fm2a58m-vg3-a8-7600/hardware.conf
-          grep -q '^TARGET_GPU_INTEGRATED_BDF="00:01.0"
+          grep -q '^TARGET_GPU_INTEGRATED_BDF="00:01.0"          grep -q 'VoodooTSCSync.kext' profiles/asrock-fm2a58m-vg3-a8-7600/mavericks/kexts.conf
           grep -q 'RealtekRTL8111.kext' profiles/asrock-fm2a58m-vg3-a8-7600/mavericks/kexts.conf
           python3 - <<'PY'
           import importlib.util
@@ -372,7 +372,7 @@ jobs:
               assert cfg['NVRAM']['Add']['7C436110-AB2A-4BBB-A880-FE41995C9F82']['boot-args'].split().count('arch=i386') == 1
           print('ASUS config postprocessor: PASS')
           PY profiles/asrock-fm2a58m-vg3-a8-7600/hardware.conf
-          grep -q '^TARGET_GPU_INTEGRATED_OC_PATH="PciRoot(0x0)/Pci(0x1,0x0)"
+          grep -q '^TARGET_GPU_INTEGRATED_OC_PATH="PciRoot(0x0)/Pci(0x1,0x0)"          grep -q 'VoodooTSCSync.kext' profiles/asrock-fm2a58m-vg3-a8-7600/mavericks/kexts.conf
           grep -q 'RealtekRTL8111.kext' profiles/asrock-fm2a58m-vg3-a8-7600/mavericks/kexts.conf
           python3 - <<'PY'
           import importlib.util
@@ -493,7 +493,7 @@ jobs:
               assert cfg['NVRAM']['Add']['7C436110-AB2A-4BBB-A880-FE41995C9F82']['boot-args'].split().count('arch=i386') == 1
           print('ASUS config postprocessor: PASS')
           PY profiles/asrock-fm2a58m-vg3-a8-7600/hardware.conf
-          grep -q '^TARGET_GPU_INTEGRATED_BLACKLIST="YES"
+          grep -q '^TARGET_GPU_INTEGRATED_BLACKLIST="YES"          grep -q 'VoodooTSCSync.kext' profiles/asrock-fm2a58m-vg3-a8-7600/mavericks/kexts.conf
           grep -q 'RealtekRTL8111.kext' profiles/asrock-fm2a58m-vg3-a8-7600/mavericks/kexts.conf
           python3 - <<'PY'
           import importlib.util
