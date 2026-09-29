@@ -12,6 +12,11 @@ on:
       - 'docs/**'
       - 'scripts/collect_linux_hardware_v2.sh'
       - 'scripts/generic_pc_profile.py'
+      - 'scripts/generate_target_oc_config.py'
+      - 'scripts/download_a8_mavericks_assets.sh'
+      - 'scripts/build_carnations_opencore.sh'
+      - 'scripts/apply_mavericks_amd_kernel.sh'
+      - 'scripts/prepare_asrock_a8_mavericks.sh'
       - 'scripts/prepare_emachines_d640_snowleopard.sh'
       - 'scripts/linux_make_usb.sh'
       - 'scripts/linux_install_openduet.sh'
@@ -30,6 +35,11 @@ on:
       - 'docs/**'
       - 'scripts/collect_linux_hardware_v2.sh'
       - 'scripts/generic_pc_profile.py'
+      - 'scripts/generate_target_oc_config.py'
+      - 'scripts/download_a8_mavericks_assets.sh'
+      - 'scripts/build_carnations_opencore.sh'
+      - 'scripts/apply_mavericks_amd_kernel.sh'
+      - 'scripts/prepare_asrock_a8_mavericks.sh'
       - 'scripts/prepare_emachines_d640_snowleopard.sh'
       - 'scripts/linux_make_usb.sh'
       - 'scripts/linux_install_openduet.sh'
@@ -53,6 +63,11 @@ jobs:
           bash -n prepare_aspire4310_macos.sh
           bash -n scripts/collect_linux_hardware_v2.sh
           python3 -m py_compile scripts/generic_pc_profile.py
+          python3 -m py_compile scripts/generate_target_oc_config.py
+          bash -n scripts/download_a8_mavericks_assets.sh
+          bash -n scripts/build_carnations_opencore.sh
+          bash -n scripts/apply_mavericks_amd_kernel.sh
+          bash -n scripts/prepare_asrock_a8_mavericks.sh
           bash -n scripts/prepare_emachines_d640_snowleopard.sh
           bash -n scripts/linux_make_usb.sh
           bash -n scripts/linux_install_openduet.sh
@@ -82,6 +97,9 @@ jobs:
           test -f profiles/asus-eee-pc-1215p/snowleopard/profile.conf
           test -f profiles/asus-eee-pc-1215p/snowleopard/kexts.conf
           test -f profiles/asus-eee-pc-1215p/lion/profile.conf
+          test -f profiles/asrock-fm2a58m-vg3-a8-7600/hardware.conf
+          test -f profiles/asrock-fm2a58m-vg3-a8-7600/mavericks/profile.conf
+          test -f profiles/asrock-fm2a58m-vg3-a8-7600/mavericks/kexts.conf
 
       - name: Exercise human-facing dispatcher
         run: |
@@ -99,7 +117,59 @@ jobs:
           ./legacy_macos_install.sh --target emachines-d640-n930 --os lion --doctor
           ./legacy_macos_install.sh --target asus-eee-pc-1215p --os snowleopard --help
           ./legacy_macos_install.sh --target asus-eee-pc-1215p --os lion --doctor
+          ./legacy_macos_install.sh --target asrock-fm2a58m-vg3-a8-7600 --os mavericks --doctor
           ./legacy_macos_install.sh --target emachines-d640-n930 --usb-probe --list
+
+      - name: Validate A8-7600 Mavericks AMD profile and patch specialization
+        run: |
+          grep -q '^PROFILE_STATUS=experimental$' profiles/asrock-fm2a58m-vg3-a8-7600/mavericks/profile.conf
+          grep -q '^TARGET_CPU_CORES="4"$' profiles/asrock-fm2a58m-vg3-a8-7600/hardware.conf
+          grep -q '^TARGET_OPENCORE_ARCH="X64"$' profiles/asrock-fm2a58m-vg3-a8-7600/hardware.conf
+          grep -q 'VoodooTSCSync.kext' profiles/asrock-fm2a58m-vg3-a8-7600/mavericks/kexts.conf
+          grep -q 'RealtekRTL8111.kext' profiles/asrock-fm2a58m-vg3-a8-7600/mavericks/kexts.conf
+          python3 - <<'PY'
+          import importlib.util
+          import pathlib
+          import plistlib
+          import tempfile
+
+          spec = importlib.util.spec_from_file_location(
+              "generator", "scripts/generate_target_oc_config.py"
+          )
+          mod = importlib.util.module_from_spec(spec)
+          spec.loader.exec_module(mod)
+
+          patch = {
+              "Kernel": {
+                  "Patch": [
+                      {
+                          "Arch": "x86_64",
+                          "Base": "_cpuid_set_info",
+                          "Comment": "_cpuid_set_info | Force cpuid_cores_per_package",
+                          "Count": 1,
+                          "Enabled": True,
+                          "Find": bytes.fromhex("c1ea1affc2"),
+                          "Identifier": "kernel",
+                          "Limit": 0,
+                          "Mask": b"",
+                          "MaxKernel": "13.99.99",
+                          "MinKernel": "13.0.0",
+                          "Replace": bytes.fromhex("ba00000000"),
+                          "ReplaceMask": b"",
+                          "Skip": 0,
+                      }
+                  ]
+              }
+          }
+          with tempfile.TemporaryDirectory() as td:
+              p = pathlib.Path(td) / "patch.plist"
+              with p.open("wb") as f:
+                  plistlib.dump(patch, f)
+              patches = mod.load_kernel_patches(p, 4)
+              assert patches[0]["Replace"] == bytes.fromhex("ba04000000")
+          assert mod.KERNEL_RANGES["mavericks"] == ("13.0.0", "13.99.99")
+          print("A8 Mavericks patch specialization: PASS")
+          PY
 
       - name: Validate D640 Linux merge and blocked hardware status
         run: |

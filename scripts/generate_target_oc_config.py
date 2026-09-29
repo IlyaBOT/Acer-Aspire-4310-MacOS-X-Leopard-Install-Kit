@@ -16,6 +16,7 @@ from pathlib import Path, PurePosixPath
 KERNEL_RANGES = {
     "leopard": ("9.0.0", "9.99.99"),
     "snowleopard": ("10.0.0", "10.99.99"),
+    "mavericks": ("13.0.0", "13.99.99"),
 }
 
 BOOT_ARGS = {
@@ -78,6 +79,47 @@ def rom_bytes(text: str) -> bytes:
     return raw.ljust(6, b"\x00")
 
 
+def load_kernel_patches(path: Path, amd_core_count: int | None) -> list[dict]:
+    """Load a Kernel/Patch array and optionally specialize the Mavericks AMD core-count patch."""
+    with path.open("rb") as handle:
+        source = plistlib.load(handle)
+
+    patches = source.get("Kernel", {}).get("Patch")
+    if not isinstance(patches, list) or not patches:
+        raise ValueError(f"{path} does not contain a non-empty Kernel/Patch array")
+
+    normalized: list[dict] = []
+    core_patch_indexes: list[int] = []
+    for index, item in enumerate(patches):
+        if not isinstance(item, dict):
+            raise ValueError(f"{path}: Kernel/Patch[{index}] is not a dictionary")
+        patch = dict(item)
+        comment = str(patch.get("Comment", ""))
+        if "cpuid_cores_per_package" in comment:
+            core_patch_indexes.append(index)
+        normalized.append(patch)
+
+    if amd_core_count is not None:
+        if not 1 <= amd_core_count <= 255:
+            raise ValueError("--amd-core-count must be in range 1..255")
+        if len(core_patch_indexes) != 1:
+            raise ValueError(
+                f"{path}: expected exactly one cpuid_cores_per_package patch, "
+                f"found {len(core_patch_indexes)}"
+            )
+        patch = normalized[core_patch_indexes[0]]
+        current = patch.get("Replace")
+        expected = b"\xBA\x00\x00\x00\x00"
+        if current != expected:
+            raise ValueError(
+                f"{path}: unexpected Mavericks cpuid_cores_per_package Replace value "
+                f"{current!r}; expected {expected!r}"
+            )
+        patch["Replace"] = b"\xBA" + bytes([amd_core_count]) + b"\x00\x00\x00"
+
+    return normalized
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--sample", required=True, type=Path)
@@ -112,6 +154,16 @@ def main() -> int:
     parser.add_argument("--no-provide-current-cpu-info", dest="provide_current_cpu_info", action="store_false")
     parser.add_argument("--driver", action="append", default=[])
     parser.add_argument("--kext", action="append", default=[])
+    parser.add_argument(
+        "--kernel-patches-plist",
+        type=Path,
+        help="Import Kernel/Patch entries from an external plist.",
+    )
+    parser.add_argument(
+        "--amd-core-count",
+        type=int,
+        help="Specialize the Mavericks AMD cpuid_cores_per_package patch for physical cores.",
+    )
     parser.add_argument("--acpi", action="append", default=[])
     parser.add_argument("--extra-boot-arg", action="append", default=[])
     parser.add_argument("--drop-apic-oem-table-id")
@@ -167,6 +219,15 @@ def main() -> int:
     config["Kernel"]["Add"] = [
         read_kext(args.oc_root, path, minimum, maximum, kext_arch) for path in args.kext
     ]
+    if args.amd_core_count is not None and args.kernel_patches_plist is None:
+        parser.error("--amd-core-count requires --kernel-patches-plist")
+    if args.kernel_patches_plist is not None:
+        try:
+            config["Kernel"]["Patch"] = load_kernel_patches(
+                args.kernel_patches_plist, args.amd_core_count
+            )
+        except (OSError, ValueError, plistlib.InvalidFileException) as exc:
+            parser.error(str(exc))
     emulate = config["Kernel"]["Emulate"]
     emulate["Cpuid1Data"] = b""
     emulate["Cpuid1Mask"] = b""

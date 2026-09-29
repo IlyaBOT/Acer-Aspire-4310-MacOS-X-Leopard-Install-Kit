@@ -27,6 +27,8 @@ Usage:
   ./legacy_macos_install.sh --target emachines-d640-n930 --os snowleopard --make-usb --disk /dev/sdX --retail /path/to.iso
   ./legacy_macos_install.sh --target asus-eee-pc-1215p --os snowleopard --doctor
   ./legacy_macos_install.sh --target asus-eee-pc-1215p --os lion --doctor
+  ./legacy_macos_install.sh --target asrock-fm2a58m-vg3-a8-7600 --os mavericks --doctor
+  ./legacy_macos_install.sh --target asrock-fm2a58m-vg3-a8-7600 --os mavericks --build
 
 Generic x86/x86_64 hardware analysis:
   ./legacy_macos_install.sh --profile universal --doctor
@@ -70,7 +72,7 @@ Legacy-BIOS USB probe (explicitly destructive and opt-in):
   sudo ./legacy_macos_install.sh --target emachines-d640-n930 --usb-probe --disk /dev/sdX --case mbr-direct
 
 Target selection:
-  --target acer-aspire-4310 | emachines-d640-n930 | asus-eee-pc-1215p
+  --target acer-aspire-4310 | emachines-d640-n930 | asus-eee-pc-1215p | asrock-fm2a58m-vg3-a8-7600
   --os leopard | snowleopard | lion | mountainlion | mavericks
 
 All other arguments are passed to the selected implementation. The original
@@ -92,6 +94,7 @@ list_targets() {
 acer-aspire-4310       Acer Aspire 4310 / Celeron M 520 / GMA950
 emachines-d640-n930    eMachines D640 / Phenom II N930 / Mobility Radeon HD 5470
 asus-eee-pc-1215p      ASUS Eee PC 1215P / Atom N570 / GMA3150
+asrock-fm2a58m-vg3-a8-7600  ASRock FM2A58M-VG3+ R2.0 / AMD A8-7600 / Radeon HD 6670
 EOF
 }
 
@@ -113,7 +116,7 @@ list_generated_profiles() {
 
 list_profiles() {
   local target os file status method name
-  for target in acer-aspire-4310 emachines-d640-n930 asus-eee-pc-1215p; do
+  for target in acer-aspire-4310 emachines-d640-n930 asus-eee-pc-1215p asrock-fm2a58m-vg3-a8-7600; do
     for os in leopard snowleopard lion mountainlion mavericks; do
       file="$PROFILES_DIR/$target/$os/profile.conf"
       [[ -f "$file" ]] || continue
@@ -221,7 +224,7 @@ fi
 
 [[ -n "$TARGET" ]] || TARGET="acer-aspire-4310"
 case "$TARGET" in
-  acer-aspire-4310|emachines-d640-n930|asus-eee-pc-1215p) ;;
+  acer-aspire-4310|emachines-d640-n930|asus-eee-pc-1215p|asrock-fm2a58m-vg3-a8-7600) ;;
   *) die "unknown target '$TARGET' (use --list-targets)" ;;
 esac
 
@@ -235,6 +238,7 @@ if [[ -z "$OS_PROFILE" ]]; then
   case "$TARGET" in
     acer-aspire-4310) OS_PROFILE="leopard" ;;
     emachines-d640-n930|asus-eee-pc-1215p) OS_PROFILE="snowleopard" ;;
+    asrock-fm2a58m-vg3-a8-7600) OS_PROFILE="mavericks" ;;
   esac
 fi
 
@@ -290,6 +294,11 @@ case "$TARGET:$OS_PROFILE" in
   asus-eee-pc-1215p:snowleopard)
     log "target=$TARGET os=$OS_PROFILE engine=prepare_asus_1215p_snowleopard.sh status=${PROFILE_STATUS:-experimental}"
     run_with_optional_opencore_selection bash "$ROOT_DIR/scripts/prepare_asus_1215p_snowleopard.sh" "${FORWARD[@]}"
+    ;;
+  asrock-fm2a58m-vg3-a8-7600:mavericks)
+    opencore_override_requested && die "The A8 Mavericks target pins the Carnations Botanica OpenCore fork; --opencore-version/variant do not apply"
+    log "target=$TARGET os=$OS_PROFILE engine=prepare_asrock_a8_mavericks.sh status=${PROFILE_STATUS:-experimental}"
+    exec bash "$ROOT_DIR/scripts/prepare_asrock_a8_mavericks.sh" "${FORWARD[@]}"
     ;;
   *) die "no implementation engine is enabled for $TARGET/$OS_PROFILE" ;;
 esac
