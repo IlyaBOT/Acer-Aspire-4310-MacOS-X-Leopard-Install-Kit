@@ -93,6 +93,7 @@ fi
 [[ -f "$BUILD_ROOT/ESP/EFI/OC/OpenCore.efi" ]] || die "Missing OpenCore.efi in build"
 [[ -f "$BUILD_ROOT/ESP/EFI/OC/config.plist" ]] || die "Missing config.plist in build"
 [[ -f "$BUILD_ROOT/ESP/EFI/OC/Drivers/OpenHfsPlus.efi" ]] || die "Missing OpenHfsPlus.efi in build"
+[[ -f "$BUILD_ROOT/ESP/EFI/OC/Drivers/OpenPartitionDxe.efi" ]] || die "Missing OpenPartitionDxe.efi in build"
 [[ ! -e "$BUILD_ROOT/ESP/EFI/OC/Drivers/HfsPlusLegacy.efi" ]] || die "Build still contains HfsPlusLegacy.efi"
 [[ -f "$BUILD_ROOT/ESP/Kernels/mach_kernel" ]] || die "Missing ESP/Kernels/mach_kernel in build"
 [[ -f "$MACRECOVERY" ]] || die "macrecovery.py not found: $MACRECOVERY"
@@ -109,6 +110,7 @@ for d in c["UEFI"]["Drivers"]:
     else:
         drivers.append(d)
 assert "OpenHfsPlus.efi" in drivers
+assert "OpenPartitionDxe.efi" in drivers
 assert "HfsPlusLegacy.efi" not in drivers
 assert "OpenRuntime.efi" in drivers
 s=c["Kernel"]["Scheme"]
@@ -200,6 +202,7 @@ python3 "$MACRECOVERY" download \
 [[ -s "$MNT/com.apple.recovery.boot/RecoveryImage.chunklist" ]] || die "RecoveryImage.chunklist was not downloaded"
 [[ -f "$MNT/EFI/BOOT/BOOTX64.efi" ]] || die "BOOTX64.efi missing after copy"
 [[ -f "$MNT/EFI/OC/Drivers/OpenHfsPlus.efi" ]] || die "OpenHfsPlus.efi missing after copy"
+[[ -f "$MNT/EFI/OC/Drivers/OpenPartitionDxe.efi" ]] || die "OpenPartitionDxe.efi missing after copy"
 [[ -f "$MNT/Kernels/mach_kernel" ]] || die "mach_kernel missing after copy"
 
 sync
@@ -209,6 +212,7 @@ printf '\nFinal USB layout:\n'
 ls -lh "$MNT/EFI/BOOT/BOOTX64.efi" \
        "$MNT/EFI/OC/OpenCore.efi" \
        "$MNT/EFI/OC/Drivers/OpenHfsPlus.efi" \
+       "$MNT/EFI/OC/Drivers/OpenPartitionDxe.efi" \
        "$MNT/Kernels/mach_kernel" \
        "$MNT/com.apple.recovery.boot/RecoveryImage.dmg" \
        "$MNT/com.apple.recovery.boot/RecoveryImage.chunklist"
