@@ -37,3 +37,7 @@ opencore-*.txt
 # Local hardware reports can contain machine-specific firmware and device data.
 *SysReport*.zip
 *SysReport*.tar.gz
+
+# Auto-detected local hardware profiles may include identifying hostnames/devices.
+profiles/generated/*/
+!profiles/generated/README.md

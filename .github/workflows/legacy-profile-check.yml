@@ -11,6 +11,7 @@ on:
       - 'targets/**'
       - 'docs/**'
       - 'scripts/collect_linux_hardware_v2.sh'
+      - 'scripts/generic_pc_profile.py'
       - 'scripts/prepare_emachines_d640_snowleopard.sh'
       - 'scripts/linux_make_usb.sh'
       - 'scripts/linux_install_openduet.sh'
@@ -28,6 +29,7 @@ on:
       - 'targets/**'
       - 'docs/**'
       - 'scripts/collect_linux_hardware_v2.sh'
+      - 'scripts/generic_pc_profile.py'
       - 'scripts/prepare_emachines_d640_snowleopard.sh'
       - 'scripts/linux_make_usb.sh'
       - 'scripts/linux_install_openduet.sh'
@@ -50,6 +52,7 @@ jobs:
           bash -n legacy_macos_install.sh
           bash -n prepare_aspire4310_macos.sh
           bash -n scripts/collect_linux_hardware_v2.sh
+          python3 -m py_compile scripts/generic_pc_profile.py
           bash -n scripts/prepare_emachines_d640_snowleopard.sh
           bash -n scripts/linux_make_usb.sh
           bash -n scripts/linux_install_openduet.sh
@@ -85,6 +88,12 @@ jobs:
           ./legacy_macos_install.sh --list-targets
           ./legacy_macos_install.sh --list-profiles
           ./legacy_macos_install.sh --help | grep -q -- '--opencore-version'
+          ./legacy_macos_install.sh --help | grep -q -- '--profile new'
+          ./legacy_macos_install.sh --profile universal --doctor
+          ./legacy_macos_install.sh --profile new --os mavericks --doctor --name 'CI Generic PC' --non-interactive --profiles-dir "$RUNNER_TEMP/generated-profiles"
+          test -f "$RUNNER_TEMP/generated-profiles/ci-generic-pc/hardware.conf"
+          grep -q '^PROFILE_ANALYSIS_ONLY=YES$' "$RUNNER_TEMP/generated-profiles/ci-generic-pc/hardware.conf"
+          grep -q '^TARGET_ARCH=AMD64$' "$RUNNER_TEMP/generated-profiles/ci-generic-pc/hardware.conf"
           ./legacy_macos_install.sh --target acer-aspire-4310 --os lion --doctor
           ./legacy_macos_install.sh --target emachines-d640-n930 --os snowleopard --help
           ./legacy_macos_install.sh --target emachines-d640-n930 --os lion --doctor

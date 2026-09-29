@@ -4,8 +4,10 @@ set -Eeuo pipefail
 ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 PROFILES_DIR="$ROOT_DIR/profiles"
 OC_SELECTOR="$ROOT_DIR/scripts/select_opencore_release.sh"
+GENERIC_PROFILE_HELPER="$ROOT_DIR/scripts/generic_pc_profile.py"
 TARGET=""
 OS_PROFILE=""
+HARDWARE_PROFILE=""
 USB_PROBE=0
 OPENCORE_VERSION=""
 OPENCORE_VARIANT=""
@@ -26,6 +28,21 @@ Usage:
   ./legacy_macos_install.sh --target asus-eee-pc-1215p --os snowleopard --doctor
   ./legacy_macos_install.sh --target asus-eee-pc-1215p --os lion --doctor
 
+Generic x86/x86_64 hardware analysis:
+  ./legacy_macos_install.sh --profile universal --doctor
+  ./legacy_macos_install.sh --profile new --os mavericks --doctor
+  ./legacy_macos_install.sh --profile new --os mavericks --doctor --name "Friend AMD PC"
+  ./legacy_macos_install.sh --profile <generated-slug> --doctor
+
+  --profile universal|universal-x86  inspect the current x86 PC without saving
+  --profile new                     inspect and save a local hardware profile
+  --profile <generated-slug>        show a previously generated local profile
+
+New profiles are analysis-only. Missing or malformed hardware facts are reported
+as WARN and omitted or replaced by a conservative fallback. At the end of an
+interactive --profile new run, the tool suggests a name based on
+OS-hostname + CPU-model + i386/AMD64 + PC/Laptop and asks for confirmation.
+
 OpenCore release selection for implemented IA32/OpenDuet profiles:
   ./legacy_macos_install.sh --target emachines-d640-n930 --download \
     --opencore-version 1.0.2 --opencore-variant debug
@@ -43,6 +60,10 @@ requested release must already be cached. Aliases: --oc-version, --oc-variant.
 Discovery:
   ./legacy_macos_install.sh --list-targets
   ./legacy_macos_install.sh --list-profiles
+
+Generated hardware profiles are stored under profiles/generated/ and are kept
+local/private by default because hostnames and hardware inventories may identify
+a machine.
 
 Legacy-BIOS USB probe (explicitly destructive and opt-in):
   ./legacy_macos_install.sh --target emachines-d640-n930 --usb-probe --list
@@ -74,6 +95,22 @@ asus-eee-pc-1215p      ASUS Eee PC 1215P / Atom N570 / GMA3150
 EOF
 }
 
+list_generated_profiles() {
+  local file slug name requested_os
+  [[ -d "$PROFILES_DIR/generated" ]] || return 0
+  for file in "$PROFILES_DIR"/generated/*/profile.conf; do
+    [[ -f "$file" ]] || continue
+    PROFILE_NAME=""
+    PROFILE_REQUESTED_OS="analysis"
+    # shellcheck disable=SC1090
+    source "$file"
+    slug="$(basename "$(dirname "$file")")"
+    name="${PROFILE_NAME:-$slug}"
+    requested_os="${PROFILE_REQUESTED_OS:-analysis}"
+    printf '%-24s %-14s %-12s %-15s %s\n' "generated/$slug" "$requested_os" analysis read-only "$name"
+  done
+}
+
 list_profiles() {
   local target os file status method name
   for target in acer-aspire-4310 emachines-d640-n930 asus-eee-pc-1215p; do
@@ -91,6 +128,7 @@ list_profiles() {
       printf '%-24s %-14s %-12s %-15s %s\n' "$target" "$os" "$status" "$method" "$name"
     done
   done
+  list_generated_profiles
 }
 
 has_forward_arg() {
@@ -141,6 +179,7 @@ while (($#)); do
   case "$1" in
     --target) need_value "$@"; shift; TARGET="$1" ;;
     --os) need_value "$@"; shift; OS_PROFILE="$1" ;;
+    --profile) need_value "$@"; shift; HARDWARE_PROFILE="$1" ;;
     --opencore-version|--oc-version) need_value "$@"; shift; OPENCORE_VERSION="$1" ;;
     --opencore-variant|--oc-variant) need_value "$@"; shift; OPENCORE_VARIANT="$1" ;;
     --usb-probe) USB_PROBE=1 ;;
@@ -155,6 +194,30 @@ while (($#)); do
   esac
   shift
 done
+
+
+if [[ -n "$HARDWARE_PROFILE" ]]; then
+  [[ -z "$TARGET" ]] || die "--profile cannot be combined with --target"
+  (( USB_PROBE == 0 )) || die "--profile cannot be combined with --usb-probe"
+  opencore_override_requested && die "OpenCore release selection does not apply to hardware-analysis profiles"
+  [[ -f "$GENERIC_PROFILE_HELPER" ]] || die "generic profile helper is missing: $GENERIC_PROFILE_HELPER"
+  command -v python3 >/dev/null 2>&1 || die "--profile requires python3"
+
+  GENERIC_ARGS=()
+  [[ -n "$OS_PROFILE" ]] && GENERIC_ARGS+=(--target-os "$OS_PROFILE")
+
+  case "$HARDWARE_PROFILE" in
+    new)
+      exec python3 "$GENERIC_PROFILE_HELPER" --mode new "${GENERIC_ARGS[@]}" "${FORWARD[@]}"
+      ;;
+    universal|universal-x86|generic-x86)
+      exec python3 "$GENERIC_PROFILE_HELPER" --mode universal "${GENERIC_ARGS[@]}" "${FORWARD[@]}"
+      ;;
+    *)
+      exec python3 "$GENERIC_PROFILE_HELPER" --show "$HARDWARE_PROFILE" "${FORWARD[@]}"
+      ;;
+  esac
+fi
 
 [[ -n "$TARGET" ]] || TARGET="acer-aspire-4310"
 case "$TARGET" in
