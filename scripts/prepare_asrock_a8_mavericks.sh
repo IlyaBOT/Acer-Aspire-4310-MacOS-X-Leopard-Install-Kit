@@ -144,8 +144,10 @@ run_doctor() {
   printf '  VoodooTSCSync IOCPUNumber=%s\n' "$((TARGET_AMD_PATCH_CORES-1))"
   printf '  KernelCache=Cacheless for first bring-up\n'
   printf '  SMBIOS=%s\n' "$TARGET_SMBIOS"
+  printf '  Kaveri iGPU blacklist=%s at %s (%s)\n' \
+    "$TARGET_GPU_INTEGRATED_BLACKLIST" "$TARGET_GPU_INTEGRATED_OC_PATH" "$TARGET_GPU_INTEGRATED_BDF"
   warn "The exact onboard HDA codec was not present in the uploaded audit; VoodooHDA is therefore full-set/experimental."
-  warn "Disable the Kaveri iGPU in BIOS for first boot when possible; the profile does not inject unsupported Kaveri graphics properties."
+  warn "The BIOS still exposes Kaveri 1002:1313 as PCI 00:01.0, so the generated config additionally poisons its macOS PCI match properties."
   (( failures == 0 ))
 }
 
@@ -267,6 +269,7 @@ run_build() {
     --boot-preset "$BOOT_PRESET"
     --runtime-profile legacy
     --provide-current-cpu-info
+    --blacklist-gpu-pci-path "$TARGET_GPU_INTEGRATED_OC_PATH"
     --driver HfsPlusLegacy.efi
     --driver OpenRuntime.efi
     --kernel-patches-plist "$CACHE_ROOT/amd/10-9-Mavericks.plist"
@@ -292,6 +295,12 @@ assert c["Kernel"]["Quirks"]["ProvideCurrentCpuInfo"] is True
 assert c["Kernel"]["Emulate"]["DummyPowerManagement"] is True
 assert c["Kernel"]["Scheme"]["KernelArch"] == "x86_64"
 assert c["Kernel"]["Scheme"]["KernelCache"] == "Cacheless"
+igpu=c["DeviceProperties"]["Add"]["PciRoot(0x0)/Pci(0x1,0x0)"]
+assert igpu["name"] == "unused"
+assert igpu["IOName"] == "#display"
+assert igpu["class-code"] == b"\xff\xff\xff\xff"
+assert igpu["vendor-id"] == b"\xff\xff\x00\x00"
+assert igpu["device-id"] == b"\xff\xff\x00\x00"
 patches=c["Kernel"]["Patch"]
 assert len(patches) >= 10
 core=[p for p in patches if "cpuid_cores_per_package" in p.get("Comment","")]
@@ -327,9 +336,11 @@ ASRock FM2A58M-VG3+ R2.0 / AMD A8-7600 Mavericks experimental payload
 
 6. VoodooTSCSync is required. Its IOCPUNumber is set to 3 for this 4-core A8-7600.
 
-7. Prefer the discrete Radeon HD 6670/7670 (1002:6758) and disable the Kaveri
-   1002:1313 iGPU in BIOS for first bring-up. No graphics device-property spoof
-   is injected automatically.
+7. The Kaveri Radeon R7 iGPU (1002:1313, PCI 00:01.0) is explicitly blacklisted
+   at PciRoot(0x0)/Pci(0x1,0x0). OpenCore injects name=unused, IOName=#display,
+   class-code=FFFFFFFF and vendor/device IDs FFFF so macOS graphics drivers do
+   not match/initialise it even when firmware still exposes the PCI function.
+   The discrete Radeon HD 6670/7670 (1002:6758) remains untouched.
 
 8. Audio remains experimental because the Linux audit identified the HDA PCI
    controller but not the actual codec. Use --kext-set full to include VoodooHDA.
