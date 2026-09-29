@@ -5,7 +5,12 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 ROOT_DIR="$SCRIPT_DIR"
 CONFIG_DIR="$ROOT_DIR/config"
 PROFILE_TARGET="${ASPIRE4310_PROFILE_TARGET:-acer-aspire-4310}"
-PROFILES_DIR="$ROOT_DIR/profiles/$PROFILE_TARGET"
+# Preserve the historical stock profile aliases exactly. Only non-stock hardware
+# variants select their own target-specific profile directory.
+PROFILES_DIR="$ROOT_DIR/profiles"
+if [[ "$PROFILE_TARGET" != "acer-aspire-4310" ]]; then
+  PROFILES_DIR="$ROOT_DIR/profiles/$PROFILE_TARGET"
+fi
 INPUT_DIR="$ROOT_DIR/input"
 DOWNLOADS_DIR="$ROOT_DIR/downloads"
 CACHE_DIR="$ROOT_DIR/cache"
