@@ -11,6 +11,7 @@ A profile-driven toolkit for building and troubleshooting macOS/OpenCore install
 | Acer Aspire 4310 | supported | supported | planned | — | — |
 | eMachines D640 / Phenom II N930 | — | experimental, **physical target blocked** | planned | planned | planned |
 | ASUS Eee PC 1215P / Atom N570 | — | experimental, **physical 10.6.3 Installer boot validated** | planned | — | — |
+| ASRock FM2A58M-VG3+ R2.0 / AMD A8-7600 | — | — | — | — | experimental, **unvalidated hardware bring-up** |
 
 `experimental` means the target is still under bring-up and is not yet a complete hardware-supported release. Some experimental targets may already have partial physical validation, documented below. `planned` means profile metadata and the installation architecture are defined, but build/destructive operations remain disabled.
 
@@ -28,6 +29,49 @@ Physical bring-up on the genuine Atom N570 target reached the functional Mac OS 
 Confirmed on the physical machine: OpenDuet/OpenCore handoff, the custom XNU path, native ICH7/NM10 AHCI and the internal Kingston SSD, USB, the internal UVC webcam, PS/2 input, and a usable Installer GUI. The GMA3150 -> GMA950 device-property spoof is visible, but the Apple GMA framebuffer/acceleration kext was not loaded in the captured Installer session; the GUI was running through the generic `IONDRVFramebuffer` path, so QE/CI is not claimed.
 
 The first physical match-trace boot appeared to stop around `IOResources: family specific matching fails`, but the machine was progressing extremely slowly. The major slowdown came from broad synchronous IOKit logging (`io=0x20007f`) plus the temporary match-trace instrumentation. The known-good pre-peripheral source/tooling state is tagged `n570-xnu-10.3.0-physical-r1`. A clean non-MATCHTRACE RELEASE kernel is now the baseline for subsequent hardware work; Ethernet, Wi-Fi, audio and battery remain experimental until their next physical runtime test.
+
+### ASRock FM2A58M-VG3+ / AMD A8-7600 Mavericks status
+
+A generated Linux hardware profile was promoted into a dedicated experimental
+target for the ASRock FM2A58M-VG3+ R2.0 desktop with AMD A8-7600 (4 physical
+cores / 4 threads), legacy BIOS/CSM, AMD FCH AHCI, Realtek RTL8111/8168 Ethernet,
+Kaveri Radeon R7 iGPU and a discrete Turks XT Radeon HD 6670/7670.
+
+The Mavericks path is pinned to Carnations Botanica's legacy AMD work:
+`AMD-Kernel-Patches@f6860343d6a13ae954a0043cecb04a809faba0f8`,
+including `10-9-Mavericks.plist` and the stock DEBUG
+`extras/kernels/mavericks/mach_kernel`. The generator automatically changes
+the Mavericks `cpuid_cores_per_package` patch to four physical cores, enables
+`ProvideCurrentCpuInfo` and `FixupAppleEfiImages`, and sets first bring-up to
+`KernelCache=Cacheless`.
+
+Mavericks also requires TSC synchronization for this patch set. The default
+minimal kext set therefore includes FakeSMC, NullCPUPowerManagement,
+VoodooTSCSync (with `IOCPUNumber=3`) and legacy RealtekRTL8111 1.2.3.
+VoodooHDA is available only in the full set because the captured Linux profile
+identified the HDA PCI controllers but did not contain the actual codec ID.
+
+The upstream AMD project currently requires its modified OpenCore fork. This
+target pins `Carnations-Botanica/OpenCorePkg` royalDevelopment commit
+`4d0803b5c1dbb12378e35712b213e531adde1d88`. On Linux, `--build` can build
+that fork with Docker; an already downloaded/built OpenCore archive can instead
+be passed with `--opencore-archive`.
+
+First bring-up should use the discrete Radeon HD 6670/7670 and disable the
+Kaveri iGPU in BIOS when possible. No unverified Kaveri graphics spoof is
+generated automatically.
+
+```bash
+./legacy_macos_install.sh --target asrock-fm2a58m-vg3-a8-7600 --os mavericks --doctor
+./legacy_macos_install.sh --target asrock-fm2a58m-vg3-a8-7600 --os mavericks --download
+./legacy_macos_install.sh --target asrock-fm2a58m-vg3-a8-7600 --os mavericks --build
+
+# after a writable Mavericks installer/system root is mounted:
+sudo ./legacy_macos_install.sh --target asrock-fm2a58m-vg3-a8-7600 --os mavericks \
+  --apply-kernel --volume /mnt/Mavericks
+```
+
+The target is not marked working until a real Mavericks boot is reproduced.
 
 ## Recommended entry point
 
@@ -151,6 +195,12 @@ profiles/
       kexts.conf
     lion/
       profile.conf
+
+  asrock-fm2a58m-vg3-a8-7600/
+    hardware.conf
+    mavericks/
+      profile.conf
+      kexts.conf
 
   generated/
     README.md
