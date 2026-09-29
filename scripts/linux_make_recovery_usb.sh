@@ -134,9 +134,24 @@ fi
 log "Unmounting existing partitions"
 while IFS= read -r node; do
   [[ "$node" == "$DISK" ]] && continue
-  while IFS= read -r mp; do
-    [[ -n "$mp" ]] && umount "$mp" || true
-  done < <(findmnt -nr -S "$node" -o TARGET 2>/dev/null || true)
+  if findmnt -rn -S "$node" >/dev/null 2>&1; then
+    # Unmount by block-device path rather than the rendered mountpoint. findmnt
+    # escapes spaces as \\x20 by default, which is not a valid path for umount.
+    umount "$node" || die "Failed to unmount $node"
+  fi
+done < <(lsblk -lnpo NAME "$DISK")
+
+# Refuse to wipe a disk while any child filesystem is still mounted.
+while IFS= read -r node; do
+  [[ "$node" == "$DISK" ]] && continue
+  if findmnt -rn -S "$node" >/dev/null 2>&1; then
+    mp="$(findmnt -rn --raw -S "$node" -o TARGET 2>/dev/null | head -n1 || true)"
+    if [[ -n "$mp" ]]; then
+      die "$node is still mounted at $mp"
+    else
+      die "$node is still mounted"
+    fi
+  fi
 done < <(lsblk -lnpo NAME "$DISK")
 
 log "Erasing partition metadata"
