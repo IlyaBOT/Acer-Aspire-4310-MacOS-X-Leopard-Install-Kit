@@ -3,7 +3,7 @@ set -Eeuo pipefail
 
 ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)"
 SOURCE_COMMIT="4d0803b5c1dbb12378e35712b213e531adde1d88"
-PATCH_REV="2"
+PATCH_REV="3"
 
 HELPER="$ROOT_DIR/scripts/build_carnations_opencore.sh"
 VENDOR_ZIP="$ROOT_DIR/vendor/carnations-opencore/OpenCore-1.0.5-DEBUG.zip"
@@ -15,6 +15,8 @@ MARKERS=(
   "Original mach_kernel is absent"
   "ESP mach_kernel fallback"
   "trying ESP Kernels fallback"
+  "ESP kernelcache missing under Cacheless"
+  "mach_kernel-for-kernelcache fallback status"
 )
 
 have() { command -v "$1" >/dev/null 2>&1; }
@@ -69,7 +71,7 @@ printf 'status:\n'
 git -C "$ROOT_DIR" status --short
 
 printf '\n=== Source patch marker in helper ===\n'
-grep -nE 'LOCAL_PATCH_REV=|Original mach_kernel is absent|ESP mach_kernel fallback|trying ESP Kernels fallback' "$HELPER" || true
+grep -nE 'LOCAL_PATCH_REV=|Original mach_kernel is absent|ESP mach_kernel fallback|trying ESP Kernels fallback|ESP kernelcache missing under Cacheless|mach_kernel-for-kernelcache fallback status' "$HELPER" || true
 
 printf '\n=== Vendored ZIP ===\n'
 printf '%s\n' "$VENDOR_ZIP"
@@ -105,7 +107,7 @@ PY
   show_binary "vendor ZIP / X64/EFI/OC/OpenCore.efi" "$TMP_DIR/OpenCore.efi"
 fi
 
-show_binary "expected r2 cache" "$CACHE_BIN"
+show_binary "expected r3 cache" "$CACHE_BIN"
 
 printf '\n=== Other cached OpenCore.efi files ===\n'
 found_cache=0

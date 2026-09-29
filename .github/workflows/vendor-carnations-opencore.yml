@@ -65,11 +65,18 @@ jobs:
               raise SystemExit(f"No usable OpenCore archive under {root}")
           candidates.sort()
           src = candidates[-1][2]
-          marker = b"Original mach_kernel is absent, trying ESP Kernels fallback"
+          markers = (
+              b"Original mach_kernel is absent, trying ESP Kernels fallback",
+              b"ESP kernelcache missing under Cacheless; trying mach_kernel instead",
+              b"ESP mach_kernel-for-kernelcache fallback status",
+          )
           with zipfile.ZipFile(src) as zf:
               opencore = zf.read("X64/EFI/OC/OpenCore.efi")
-          if marker not in opencore:
-              raise SystemExit(f"Built archive is missing Mavericks ESP mach_kernel fallback marker: {src}")
+          missing = [marker.decode("ascii") for marker in markers if marker not in opencore]
+          if missing:
+              raise SystemExit(
+                  f"Built archive is missing Mavericks custom-kernel fallback markers: {missing}: {src}"
+              )
 
           dest = Path("vendor/carnations-opencore/OpenCore-1.0.5-DEBUG.zip")
           dest.parent.mkdir(parents=True, exist_ok=True)

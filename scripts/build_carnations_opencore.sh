@@ -8,8 +8,8 @@ SOURCE_COMMIT="4d0803b5c1dbb12378e35712b213e531adde1d88"
 AUDK_BRANCH="audk-stable-202502"
 AUDK_COMMIT="f57172652dc48efac882d0cde416676e4fe4f05a"
 SOURCE_DIR="$CACHE_ROOT/src-$SOURCE_COMMIT"
-LOCAL_PATCH_REV="2"
-PATCH_MARKER="Original mach_kernel is absent, trying ESP Kernels fallback"
+LOCAL_PATCH_REV="3"
+PATCH_MARKER="ESP kernelcache missing under Cacheless; trying mach_kernel instead"
 DIST_DIR="$CACHE_ROOT/${SOURCE_COMMIT}-r${LOCAL_PATCH_REV}"
 ARCHIVE=""
 BUNDLED_ARCHIVE="${CARNATIONS_OC_BUNDLED_ARCHIVE:-$ROOT_DIR/vendor/carnations-opencore/OpenCore-1.0.5-DEBUG.zip}"
@@ -231,9 +231,53 @@ if "Original mach_kernel is absent, trying ESP Kernels fallback" not in s:
         raise SystemExit("unexpected OpenCoreKernel.c layout; cannot apply Mavericks mach_kernel fallback")
     s = s.replace(needle, patched, 1)
 
+needle2 = '''      DEBUG ((DEBUG_INFO, "OC: OcSafeFileOpen status: %r\\n", Status));
+
+      if (!EFI_ERROR (Status)) {
+'''
+
+patched2 = '''      DEBUG ((DEBUG_INFO, "OC: OcSafeFileOpen status: %r\\n", Status));
+
+      //
+      // Mavericks Recovery boot.efi may stop after a rejected prelinked
+      // kernelcache instead of issuing a second request for /mach_kernel.
+      // When CustomKernel + Cacheless is selected and ESP:/Kernels/kernelcache
+      // is absent, satisfy the kernelcache request with ESP:/Kernels/mach_kernel
+      // and continue through the plain-kernel path below.
+      //
+      if (  (Status == EFI_NOT_FOUND)
+         && (MaxCacheTypeAllowed == CacheTypeCacheless)
+         && (StrCmp (NewFileName, L"kernelcache") == 0))
+      {
+        DEBUG ((DEBUG_INFO, "OC: ESP kernelcache missing under Cacheless; trying mach_kernel instead\\n"));
+
+        NewFileName = L"mach_kernel";
+        mCustomKernelDirectoryInProgress = TRUE;
+        Status = OcSafeFileOpen (
+                   mCustomKernelDirectory,
+                   &EspNewHandle,
+                   NewFileName,
+                   OpenMode,
+                   Attributes
+                   );
+        mCustomKernelDirectoryInProgress = FALSE;
+
+        DEBUG ((DEBUG_INFO, "OC: ESP mach_kernel-for-kernelcache fallback status: %r\\n", Status));
+      }
+
+      if (!EFI_ERROR (Status)) {
+'''
+
+if "ESP kernelcache missing under Cacheless; trying mach_kernel instead" not in s:
+    if needle2 not in s:
+        raise SystemExit("unexpected OpenCoreKernel.c layout; cannot apply kernelcache-to-mach_kernel fallback")
+    s = s.replace(needle2, patched2, 1)
+
 expected = "NewFileName = OcStrrChr (FileName, L'\\\\');"
 if expected not in s:
     raise SystemExit("Mavericks fallback patch produced invalid C backslash escaping")
+if "ESP mach_kernel-for-kernelcache fallback status" not in s:
+    raise SystemExit("Mavericks kernelcache-to-mach_kernel fallback patch was not applied")
 
 p.write_text(s)
 PY
