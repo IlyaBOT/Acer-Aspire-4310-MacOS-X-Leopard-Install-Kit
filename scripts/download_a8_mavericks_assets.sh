@@ -6,10 +6,10 @@ CACHE_ROOT="${A8_MAVERICKS_CACHE:-$ROOT_DIR/cache/a8-7600-mavericks}"
 AMD_ROOT="$CACHE_ROOT/amd"
 KEXT_ROOT="$CACHE_ROOT/kexts"
 AMD_COMMIT="f6860343d6a13ae954a0043cecb04a809faba0f8"
+KERNEL_DOWNLOADER="$ROOT_DIR/scripts/download_carnations_amd_kernel.sh"
 
 PATCH_URL="https://raw.githubusercontent.com/Carnations-Botanica/AMD-Kernel-Patches/$AMD_COMMIT/10-9-Mavericks.plist"
 PATCH_BLOB="b16798f398192f097d81243ea8eacda38305ef7d"
-KERNEL_URL="https://raw.githubusercontent.com/Carnations-Botanica/AMD-Kernel-Patches/$AMD_COMMIT/extras/kernels/mavericks/mach_kernel"
 KERNEL_BLOB="cfdf0513edd8c57ed7f9b7c2d1f90090425b00fd"
 
 RTL_COMMIT="60d18d064988ed2a62206de55d682c8f1b77e92d"
@@ -57,7 +57,8 @@ download_blob() {
 }
 
 download_blob "$PATCH_URL" "$PATCH_BLOB" "$AMD_ROOT/10-9-Mavericks.plist"
-download_blob "$KERNEL_URL" "$KERNEL_BLOB" "$AMD_ROOT/mach_kernel"
+[[ -f "$KERNEL_DOWNLOADER" ]] || die "AMD kernel downloader is missing: $KERNEL_DOWNLOADER"
+bash "$KERNEL_DOWNLOADER" --os mavericks --output "$AMD_ROOT/mach_kernel"
 
 python3 - "$AMD_ROOT/10-9-Mavericks.plist" "$AMD_ROOT/mach_kernel" <<'PY'
 from pathlib import Path
@@ -124,4 +125,5 @@ note=Version 1.2.3 is selected for Mavericks-era compatibility; this binary is n
 EOF
 
 log "AMD assets: $AMD_ROOT"
+log "mach_kernel is selected automatically from Carnations-Botanica/AMD-Kernel-Patches/extras/kernels/mavericks"
 log "Realtek kext: $RTL"
