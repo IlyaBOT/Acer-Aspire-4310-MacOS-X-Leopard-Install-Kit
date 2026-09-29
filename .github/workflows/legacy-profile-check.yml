@@ -124,7 +124,496 @@ jobs:
         run: |
           grep -q '^PROFILE_STATUS=experimental$' profiles/asrock-fm2a58m-vg3-a8-7600/mavericks/profile.conf
           grep -q '^TARGET_CPU_CORES="4"$' profiles/asrock-fm2a58m-vg3-a8-7600/hardware.conf
-          grep -q '^TARGET_OPENCORE_ARCH="X64"$' profiles/asrock-fm2a58m-vg3-a8-7600/hardware.conf
+          grep -q '^TARGET_OPENCORE_ARCH="X64"
+          grep -q 'RealtekRTL8111.kext' profiles/asrock-fm2a58m-vg3-a8-7600/mavericks/kexts.conf
+          python3 - <<'PY'
+          import importlib.util
+          import pathlib
+          import plistlib
+          import tempfile
+
+          spec = importlib.util.spec_from_file_location(
+              "generator", "scripts/generate_target_oc_config.py"
+          )
+          mod = importlib.util.module_from_spec(spec)
+          spec.loader.exec_module(mod)
+
+          patch = {
+              "Kernel": {
+                  "Patch": [
+                      {
+                          "Arch": "x86_64",
+                          "Base": "_cpuid_set_info",
+                          "Comment": "_cpuid_set_info | Force cpuid_cores_per_package",
+                          "Count": 1,
+                          "Enabled": True,
+                          "Find": bytes.fromhex("c1ea1affc2"),
+                          "Identifier": "kernel",
+                          "Limit": 0,
+                          "Mask": b"",
+                          "MaxKernel": "13.99.99",
+                          "MinKernel": "13.0.0",
+                          "Replace": bytes.fromhex("ba00000000"),
+                          "ReplaceMask": b"",
+                          "Skip": 0,
+                      }
+                  ]
+              }
+          }
+          with tempfile.TemporaryDirectory() as td:
+              p = pathlib.Path(td) / "patch.plist"
+              with p.open("wb") as f:
+                  plistlib.dump(patch, f)
+              patches = mod.load_kernel_patches(p, 4)
+              assert patches[0]["Replace"] == bytes.fromhex("ba04000000")
+          assert mod.KERNEL_RANGES["mavericks"] == ("13.0.0", "13.99.99")
+          poison = mod.gpu_blacklist_properties()
+          assert poison["name"] == "unused"
+          assert poison["IOName"] == "#display"
+          assert poison["class-code"] == bytes.fromhex("ffffffff")
+          assert poison["vendor-id"] == bytes.fromhex("ffff0000")
+          assert poison["device-id"] == bytes.fromhex("ffff0000")
+          print("A8 Mavericks patch specialization + GPU blacklist: PASS")
+          PY
+
+      - name: Validate D640 Linux merge and blocked hardware status
+        run: |
+          grep -q '^PROFILE_STATUS=experimental$' profiles/emachines-d640-n930/snowleopard/profile.conf
+          grep -q '^HARDWARE_TEST_STATUS=blocked$' profiles/emachines-d640-n930/snowleopard/profile.conf
+          grep -q '^HARDWARE_TEST_RESULT="no-known-good-boot"$' profiles/emachines-d640-n930/snowleopard/profile.conf
+          grep -q 'Linux USB-writing backend' README.md
+          grep -q 'Current physical-target status.*blocked' docs/EMACHINES_D640_LINUX.md
+          grep -q '^preflight_asm()' scripts/d640_usb_boot_probe.sh
+          grep -q '^preflight_asm$' scripts/d640_usb_boot_probe.sh
+          grep -Fq 'times 446-(\$-\$\$) db 0' scripts/d640_usb_boot_probe.sh
+          grep -q 'Linux legacy macOS USB backend' scripts/linux_make_usb.sh
+
+      - name: Unit-test cached OpenCore selector without network
+        run: |
+          mkdir -p cache/opencore/0.0.0/DEBUG/Docs \
+                   cache/opencore/0.0.0/DEBUG/IA32/EFI/OC \
+                   cache/opencore/0.0.0/DEBUG/IA32/EFI/BOOT \
+                   cache/opencore/0.0.0/DEBUG/Utilities/LegacyBoot
+          : > cache/opencore/0.0.0/DEBUG/Docs/Sample.plist
+          : > cache/opencore/0.0.0/DEBUG/IA32/EFI/OC/OpenCore.efi
+          : > cache/opencore/0.0.0/DEBUG/IA32/EFI/BOOT/BOOTIA32.efi
+          : > cache/opencore/0.0.0/DEBUG/Utilities/LegacyBoot/bootIA32
+          : > cache/opencore/0.0.0/DEBUG/Utilities/LegacyBoot/boot0
+          : > cache/opencore/0.0.0/DEBUG/Utilities/LegacyBoot/boot1f32
+          cat > cache/current-sources.env <<'EOF'
+          OC_VERSION=old
+          OC_VARIANT=DEBUG
+          OC_CACHE_REL=opencore/old/DEBUG
+          HFS_32_FILE=keep-this-value
+          LEGACY_KEXTS_CACHE_REL=keep-this-too
+          EOF
+          bash scripts/select_opencore_release.sh --select-only --version 0.0.0 --variant debug
+          grep -q '^OC_VERSION=0.0.0$' cache/current-sources.env
+          grep -q '^OC_VARIANT=DEBUG$' cache/current-sources.env
+          grep -q '^OC_CACHE_REL=opencore/0.0.0/DEBUG$' cache/current-sources.env
+          grep -q '^HFS_32_FILE=keep-this-value$' cache/current-sources.env
+          grep -q '^LEGACY_KEXTS_CACHE_REL=keep-this-too$' cache/current-sources.env
+
+      - name: Validate audited ASUS 1215P metadata
+        run: |
+          grep -q 'PROFILE_STATUS=experimental' profiles/asus-eee-pc-1215p/snowleopard/profile.conf
+          grep -q 'CUSTOM_KERNEL_REQUIRED=YES' profiles/asus-eee-pc-1215p/snowleopard/profile.conf
+          grep -q 'KERNEL_ARCH=i386' profiles/asus-eee-pc-1215p/snowleopard/profile.conf
+          grep -q 'TARGET_ETHERNET="Qualcomm Atheros AR8152 v2 1969:2062' profiles/asus-eee-pc-1215p/hardware.conf
+          grep -q 'TARGET_WIFI="Qualcomm Atheros AR9285 168C:002B' profiles/asus-eee-pc-1215p/hardware.conf
+          grep -q 'TARGET_AUDIO="Intel HDA 8086:27D8 subsystem 1043:841C + Realtek ALC269VB 10EC:0269"' profiles/asus-eee-pc-1215p/hardware.conf
+          grep -q 'TARGET_ACPI_PCI_ROOT_UID="0"' profiles/asus-eee-pc-1215p/hardware.conf
+          grep -q 'GFX_NATIVE_PRIMARY_ID="8086:A011"' profiles/asus-eee-pc-1215p/gma3150.conf
+          grep -q 'GFX_CURSOR_PATCH_IDENTIFIER="com.apple.driver.AppleIntelIntegratedFramebuffer"' profiles/asus-eee-pc-1215p/gma3150.conf
+          grep -q 'GFX_CURSOR_PATCH_MAX_KERNEL="11.99.99"' profiles/asus-eee-pc-1215p/gma3150.conf
+
+      - name: Unit-test ASUS GMA3150 config postprocessor
+        run: |
+          python3 - <<'PY'
+          import plistlib, pathlib, subprocess, tempfile
+          config = {
+              'DeviceProperties': {'Add': {}, 'Delete': {}},
+              'Kernel': {'Patch': [], 'Scheme': {'KernelArch':'i386','CustomKernel':True,'FuzzyMatch':True}},
+              'NVRAM': {'Add': {'7C436110-AB2A-4BBB-A880-FE41995C9F82': {'boot-args':'-v'}}},
+              'PlatformInfo': {'Generic': {}},
+              'UEFI': {'Drivers': []},
+          }
+          with tempfile.TemporaryDirectory() as td:
+              p = pathlib.Path(td) / 'config.plist'
+              with p.open('wb') as f: plistlib.dump(config, f)
+              for _ in range(2):
+                  subprocess.run(['python3','scripts/patch_asus_1215p_oc_config.py',str(p)], check=True)
+              subprocess.run(['python3','scripts/patch_asus_1215p_oc_config.py','--check',str(p)], check=True)
+              cfg = plistlib.load(p.open('rb'))
+              matches = [x for x in cfg['Kernel']['Patch'] if x.get('Comment') == 'GMA 3150 Cursor corruption fix']
+              assert len(matches) == 1
+              assert cfg['DeviceProperties']['Add']['PciRoot(0x0)/Pci(0x2,0x0)']['device-id'] == bytes.fromhex('A2270000')
+              assert cfg['NVRAM']['Add']['7C436110-AB2A-4BBB-A880-FE41995C9F82']['boot-args'].split().count('arch=i386') == 1
+          print('ASUS config postprocessor: PASS')
+          PY profiles/asrock-fm2a58m-vg3-a8-7600/hardware.conf
+          grep -q '^TARGET_GPU_INTEGRATED_BDF="00:01.0"
+          grep -q 'RealtekRTL8111.kext' profiles/asrock-fm2a58m-vg3-a8-7600/mavericks/kexts.conf
+          python3 - <<'PY'
+          import importlib.util
+          import pathlib
+          import plistlib
+          import tempfile
+
+          spec = importlib.util.spec_from_file_location(
+              "generator", "scripts/generate_target_oc_config.py"
+          )
+          mod = importlib.util.module_from_spec(spec)
+          spec.loader.exec_module(mod)
+
+          patch = {
+              "Kernel": {
+                  "Patch": [
+                      {
+                          "Arch": "x86_64",
+                          "Base": "_cpuid_set_info",
+                          "Comment": "_cpuid_set_info | Force cpuid_cores_per_package",
+                          "Count": 1,
+                          "Enabled": True,
+                          "Find": bytes.fromhex("c1ea1affc2"),
+                          "Identifier": "kernel",
+                          "Limit": 0,
+                          "Mask": b"",
+                          "MaxKernel": "13.99.99",
+                          "MinKernel": "13.0.0",
+                          "Replace": bytes.fromhex("ba00000000"),
+                          "ReplaceMask": b"",
+                          "Skip": 0,
+                      }
+                  ]
+              }
+          }
+          with tempfile.TemporaryDirectory() as td:
+              p = pathlib.Path(td) / "patch.plist"
+              with p.open("wb") as f:
+                  plistlib.dump(patch, f)
+              patches = mod.load_kernel_patches(p, 4)
+              assert patches[0]["Replace"] == bytes.fromhex("ba04000000")
+          assert mod.KERNEL_RANGES["mavericks"] == ("13.0.0", "13.99.99")
+          print("A8 Mavericks patch specialization: PASS")
+          PY
+
+      - name: Validate D640 Linux merge and blocked hardware status
+        run: |
+          grep -q '^PROFILE_STATUS=experimental$' profiles/emachines-d640-n930/snowleopard/profile.conf
+          grep -q '^HARDWARE_TEST_STATUS=blocked$' profiles/emachines-d640-n930/snowleopard/profile.conf
+          grep -q '^HARDWARE_TEST_RESULT="no-known-good-boot"$' profiles/emachines-d640-n930/snowleopard/profile.conf
+          grep -q 'Linux USB-writing backend' README.md
+          grep -q 'Current physical-target status.*blocked' docs/EMACHINES_D640_LINUX.md
+          grep -q '^preflight_asm()' scripts/d640_usb_boot_probe.sh
+          grep -q '^preflight_asm$' scripts/d640_usb_boot_probe.sh
+          grep -Fq 'times 446-(\$-\$\$) db 0' scripts/d640_usb_boot_probe.sh
+          grep -q 'Linux legacy macOS USB backend' scripts/linux_make_usb.sh
+
+      - name: Unit-test cached OpenCore selector without network
+        run: |
+          mkdir -p cache/opencore/0.0.0/DEBUG/Docs \
+                   cache/opencore/0.0.0/DEBUG/IA32/EFI/OC \
+                   cache/opencore/0.0.0/DEBUG/IA32/EFI/BOOT \
+                   cache/opencore/0.0.0/DEBUG/Utilities/LegacyBoot
+          : > cache/opencore/0.0.0/DEBUG/Docs/Sample.plist
+          : > cache/opencore/0.0.0/DEBUG/IA32/EFI/OC/OpenCore.efi
+          : > cache/opencore/0.0.0/DEBUG/IA32/EFI/BOOT/BOOTIA32.efi
+          : > cache/opencore/0.0.0/DEBUG/Utilities/LegacyBoot/bootIA32
+          : > cache/opencore/0.0.0/DEBUG/Utilities/LegacyBoot/boot0
+          : > cache/opencore/0.0.0/DEBUG/Utilities/LegacyBoot/boot1f32
+          cat > cache/current-sources.env <<'EOF'
+          OC_VERSION=old
+          OC_VARIANT=DEBUG
+          OC_CACHE_REL=opencore/old/DEBUG
+          HFS_32_FILE=keep-this-value
+          LEGACY_KEXTS_CACHE_REL=keep-this-too
+          EOF
+          bash scripts/select_opencore_release.sh --select-only --version 0.0.0 --variant debug
+          grep -q '^OC_VERSION=0.0.0$' cache/current-sources.env
+          grep -q '^OC_VARIANT=DEBUG$' cache/current-sources.env
+          grep -q '^OC_CACHE_REL=opencore/0.0.0/DEBUG$' cache/current-sources.env
+          grep -q '^HFS_32_FILE=keep-this-value$' cache/current-sources.env
+          grep -q '^LEGACY_KEXTS_CACHE_REL=keep-this-too$' cache/current-sources.env
+
+      - name: Validate audited ASUS 1215P metadata
+        run: |
+          grep -q 'PROFILE_STATUS=experimental' profiles/asus-eee-pc-1215p/snowleopard/profile.conf
+          grep -q 'CUSTOM_KERNEL_REQUIRED=YES' profiles/asus-eee-pc-1215p/snowleopard/profile.conf
+          grep -q 'KERNEL_ARCH=i386' profiles/asus-eee-pc-1215p/snowleopard/profile.conf
+          grep -q 'TARGET_ETHERNET="Qualcomm Atheros AR8152 v2 1969:2062' profiles/asus-eee-pc-1215p/hardware.conf
+          grep -q 'TARGET_WIFI="Qualcomm Atheros AR9285 168C:002B' profiles/asus-eee-pc-1215p/hardware.conf
+          grep -q 'TARGET_AUDIO="Intel HDA 8086:27D8 subsystem 1043:841C + Realtek ALC269VB 10EC:0269"' profiles/asus-eee-pc-1215p/hardware.conf
+          grep -q 'TARGET_ACPI_PCI_ROOT_UID="0"' profiles/asus-eee-pc-1215p/hardware.conf
+          grep -q 'GFX_NATIVE_PRIMARY_ID="8086:A011"' profiles/asus-eee-pc-1215p/gma3150.conf
+          grep -q 'GFX_CURSOR_PATCH_IDENTIFIER="com.apple.driver.AppleIntelIntegratedFramebuffer"' profiles/asus-eee-pc-1215p/gma3150.conf
+          grep -q 'GFX_CURSOR_PATCH_MAX_KERNEL="11.99.99"' profiles/asus-eee-pc-1215p/gma3150.conf
+
+      - name: Unit-test ASUS GMA3150 config postprocessor
+        run: |
+          python3 - <<'PY'
+          import plistlib, pathlib, subprocess, tempfile
+          config = {
+              'DeviceProperties': {'Add': {}, 'Delete': {}},
+              'Kernel': {'Patch': [], 'Scheme': {'KernelArch':'i386','CustomKernel':True,'FuzzyMatch':True}},
+              'NVRAM': {'Add': {'7C436110-AB2A-4BBB-A880-FE41995C9F82': {'boot-args':'-v'}}},
+              'PlatformInfo': {'Generic': {}},
+              'UEFI': {'Drivers': []},
+          }
+          with tempfile.TemporaryDirectory() as td:
+              p = pathlib.Path(td) / 'config.plist'
+              with p.open('wb') as f: plistlib.dump(config, f)
+              for _ in range(2):
+                  subprocess.run(['python3','scripts/patch_asus_1215p_oc_config.py',str(p)], check=True)
+              subprocess.run(['python3','scripts/patch_asus_1215p_oc_config.py','--check',str(p)], check=True)
+              cfg = plistlib.load(p.open('rb'))
+              matches = [x for x in cfg['Kernel']['Patch'] if x.get('Comment') == 'GMA 3150 Cursor corruption fix']
+              assert len(matches) == 1
+              assert cfg['DeviceProperties']['Add']['PciRoot(0x0)/Pci(0x2,0x0)']['device-id'] == bytes.fromhex('A2270000')
+              assert cfg['NVRAM']['Add']['7C436110-AB2A-4BBB-A880-FE41995C9F82']['boot-args'].split().count('arch=i386') == 1
+          print('ASUS config postprocessor: PASS')
+          PY profiles/asrock-fm2a58m-vg3-a8-7600/hardware.conf
+          grep -q '^TARGET_GPU_INTEGRATED_OC_PATH="PciRoot(0x0)/Pci(0x1,0x0)"
+          grep -q 'RealtekRTL8111.kext' profiles/asrock-fm2a58m-vg3-a8-7600/mavericks/kexts.conf
+          python3 - <<'PY'
+          import importlib.util
+          import pathlib
+          import plistlib
+          import tempfile
+
+          spec = importlib.util.spec_from_file_location(
+              "generator", "scripts/generate_target_oc_config.py"
+          )
+          mod = importlib.util.module_from_spec(spec)
+          spec.loader.exec_module(mod)
+
+          patch = {
+              "Kernel": {
+                  "Patch": [
+                      {
+                          "Arch": "x86_64",
+                          "Base": "_cpuid_set_info",
+                          "Comment": "_cpuid_set_info | Force cpuid_cores_per_package",
+                          "Count": 1,
+                          "Enabled": True,
+                          "Find": bytes.fromhex("c1ea1affc2"),
+                          "Identifier": "kernel",
+                          "Limit": 0,
+                          "Mask": b"",
+                          "MaxKernel": "13.99.99",
+                          "MinKernel": "13.0.0",
+                          "Replace": bytes.fromhex("ba00000000"),
+                          "ReplaceMask": b"",
+                          "Skip": 0,
+                      }
+                  ]
+              }
+          }
+          with tempfile.TemporaryDirectory() as td:
+              p = pathlib.Path(td) / "patch.plist"
+              with p.open("wb") as f:
+                  plistlib.dump(patch, f)
+              patches = mod.load_kernel_patches(p, 4)
+              assert patches[0]["Replace"] == bytes.fromhex("ba04000000")
+          assert mod.KERNEL_RANGES["mavericks"] == ("13.0.0", "13.99.99")
+          print("A8 Mavericks patch specialization: PASS")
+          PY
+
+      - name: Validate D640 Linux merge and blocked hardware status
+        run: |
+          grep -q '^PROFILE_STATUS=experimental$' profiles/emachines-d640-n930/snowleopard/profile.conf
+          grep -q '^HARDWARE_TEST_STATUS=blocked$' profiles/emachines-d640-n930/snowleopard/profile.conf
+          grep -q '^HARDWARE_TEST_RESULT="no-known-good-boot"$' profiles/emachines-d640-n930/snowleopard/profile.conf
+          grep -q 'Linux USB-writing backend' README.md
+          grep -q 'Current physical-target status.*blocked' docs/EMACHINES_D640_LINUX.md
+          grep -q '^preflight_asm()' scripts/d640_usb_boot_probe.sh
+          grep -q '^preflight_asm$' scripts/d640_usb_boot_probe.sh
+          grep -Fq 'times 446-(\$-\$\$) db 0' scripts/d640_usb_boot_probe.sh
+          grep -q 'Linux legacy macOS USB backend' scripts/linux_make_usb.sh
+
+      - name: Unit-test cached OpenCore selector without network
+        run: |
+          mkdir -p cache/opencore/0.0.0/DEBUG/Docs \
+                   cache/opencore/0.0.0/DEBUG/IA32/EFI/OC \
+                   cache/opencore/0.0.0/DEBUG/IA32/EFI/BOOT \
+                   cache/opencore/0.0.0/DEBUG/Utilities/LegacyBoot
+          : > cache/opencore/0.0.0/DEBUG/Docs/Sample.plist
+          : > cache/opencore/0.0.0/DEBUG/IA32/EFI/OC/OpenCore.efi
+          : > cache/opencore/0.0.0/DEBUG/IA32/EFI/BOOT/BOOTIA32.efi
+          : > cache/opencore/0.0.0/DEBUG/Utilities/LegacyBoot/bootIA32
+          : > cache/opencore/0.0.0/DEBUG/Utilities/LegacyBoot/boot0
+          : > cache/opencore/0.0.0/DEBUG/Utilities/LegacyBoot/boot1f32
+          cat > cache/current-sources.env <<'EOF'
+          OC_VERSION=old
+          OC_VARIANT=DEBUG
+          OC_CACHE_REL=opencore/old/DEBUG
+          HFS_32_FILE=keep-this-value
+          LEGACY_KEXTS_CACHE_REL=keep-this-too
+          EOF
+          bash scripts/select_opencore_release.sh --select-only --version 0.0.0 --variant debug
+          grep -q '^OC_VERSION=0.0.0$' cache/current-sources.env
+          grep -q '^OC_VARIANT=DEBUG$' cache/current-sources.env
+          grep -q '^OC_CACHE_REL=opencore/0.0.0/DEBUG$' cache/current-sources.env
+          grep -q '^HFS_32_FILE=keep-this-value$' cache/current-sources.env
+          grep -q '^LEGACY_KEXTS_CACHE_REL=keep-this-too$' cache/current-sources.env
+
+      - name: Validate audited ASUS 1215P metadata
+        run: |
+          grep -q 'PROFILE_STATUS=experimental' profiles/asus-eee-pc-1215p/snowleopard/profile.conf
+          grep -q 'CUSTOM_KERNEL_REQUIRED=YES' profiles/asus-eee-pc-1215p/snowleopard/profile.conf
+          grep -q 'KERNEL_ARCH=i386' profiles/asus-eee-pc-1215p/snowleopard/profile.conf
+          grep -q 'TARGET_ETHERNET="Qualcomm Atheros AR8152 v2 1969:2062' profiles/asus-eee-pc-1215p/hardware.conf
+          grep -q 'TARGET_WIFI="Qualcomm Atheros AR9285 168C:002B' profiles/asus-eee-pc-1215p/hardware.conf
+          grep -q 'TARGET_AUDIO="Intel HDA 8086:27D8 subsystem 1043:841C + Realtek ALC269VB 10EC:0269"' profiles/asus-eee-pc-1215p/hardware.conf
+          grep -q 'TARGET_ACPI_PCI_ROOT_UID="0"' profiles/asus-eee-pc-1215p/hardware.conf
+          grep -q 'GFX_NATIVE_PRIMARY_ID="8086:A011"' profiles/asus-eee-pc-1215p/gma3150.conf
+          grep -q 'GFX_CURSOR_PATCH_IDENTIFIER="com.apple.driver.AppleIntelIntegratedFramebuffer"' profiles/asus-eee-pc-1215p/gma3150.conf
+          grep -q 'GFX_CURSOR_PATCH_MAX_KERNEL="11.99.99"' profiles/asus-eee-pc-1215p/gma3150.conf
+
+      - name: Unit-test ASUS GMA3150 config postprocessor
+        run: |
+          python3 - <<'PY'
+          import plistlib, pathlib, subprocess, tempfile
+          config = {
+              'DeviceProperties': {'Add': {}, 'Delete': {}},
+              'Kernel': {'Patch': [], 'Scheme': {'KernelArch':'i386','CustomKernel':True,'FuzzyMatch':True}},
+              'NVRAM': {'Add': {'7C436110-AB2A-4BBB-A880-FE41995C9F82': {'boot-args':'-v'}}},
+              'PlatformInfo': {'Generic': {}},
+              'UEFI': {'Drivers': []},
+          }
+          with tempfile.TemporaryDirectory() as td:
+              p = pathlib.Path(td) / 'config.plist'
+              with p.open('wb') as f: plistlib.dump(config, f)
+              for _ in range(2):
+                  subprocess.run(['python3','scripts/patch_asus_1215p_oc_config.py',str(p)], check=True)
+              subprocess.run(['python3','scripts/patch_asus_1215p_oc_config.py','--check',str(p)], check=True)
+              cfg = plistlib.load(p.open('rb'))
+              matches = [x for x in cfg['Kernel']['Patch'] if x.get('Comment') == 'GMA 3150 Cursor corruption fix']
+              assert len(matches) == 1
+              assert cfg['DeviceProperties']['Add']['PciRoot(0x0)/Pci(0x2,0x0)']['device-id'] == bytes.fromhex('A2270000')
+              assert cfg['NVRAM']['Add']['7C436110-AB2A-4BBB-A880-FE41995C9F82']['boot-args'].split().count('arch=i386') == 1
+          print('ASUS config postprocessor: PASS')
+          PY profiles/asrock-fm2a58m-vg3-a8-7600/hardware.conf
+          grep -q '^TARGET_GPU_INTEGRATED_BLACKLIST="YES"
+          grep -q 'RealtekRTL8111.kext' profiles/asrock-fm2a58m-vg3-a8-7600/mavericks/kexts.conf
+          python3 - <<'PY'
+          import importlib.util
+          import pathlib
+          import plistlib
+          import tempfile
+
+          spec = importlib.util.spec_from_file_location(
+              "generator", "scripts/generate_target_oc_config.py"
+          )
+          mod = importlib.util.module_from_spec(spec)
+          spec.loader.exec_module(mod)
+
+          patch = {
+              "Kernel": {
+                  "Patch": [
+                      {
+                          "Arch": "x86_64",
+                          "Base": "_cpuid_set_info",
+                          "Comment": "_cpuid_set_info | Force cpuid_cores_per_package",
+                          "Count": 1,
+                          "Enabled": True,
+                          "Find": bytes.fromhex("c1ea1affc2"),
+                          "Identifier": "kernel",
+                          "Limit": 0,
+                          "Mask": b"",
+                          "MaxKernel": "13.99.99",
+                          "MinKernel": "13.0.0",
+                          "Replace": bytes.fromhex("ba00000000"),
+                          "ReplaceMask": b"",
+                          "Skip": 0,
+                      }
+                  ]
+              }
+          }
+          with tempfile.TemporaryDirectory() as td:
+              p = pathlib.Path(td) / "patch.plist"
+              with p.open("wb") as f:
+                  plistlib.dump(patch, f)
+              patches = mod.load_kernel_patches(p, 4)
+              assert patches[0]["Replace"] == bytes.fromhex("ba04000000")
+          assert mod.KERNEL_RANGES["mavericks"] == ("13.0.0", "13.99.99")
+          print("A8 Mavericks patch specialization: PASS")
+          PY
+
+      - name: Validate D640 Linux merge and blocked hardware status
+        run: |
+          grep -q '^PROFILE_STATUS=experimental$' profiles/emachines-d640-n930/snowleopard/profile.conf
+          grep -q '^HARDWARE_TEST_STATUS=blocked$' profiles/emachines-d640-n930/snowleopard/profile.conf
+          grep -q '^HARDWARE_TEST_RESULT="no-known-good-boot"$' profiles/emachines-d640-n930/snowleopard/profile.conf
+          grep -q 'Linux USB-writing backend' README.md
+          grep -q 'Current physical-target status.*blocked' docs/EMACHINES_D640_LINUX.md
+          grep -q '^preflight_asm()' scripts/d640_usb_boot_probe.sh
+          grep -q '^preflight_asm$' scripts/d640_usb_boot_probe.sh
+          grep -Fq 'times 446-(\$-\$\$) db 0' scripts/d640_usb_boot_probe.sh
+          grep -q 'Linux legacy macOS USB backend' scripts/linux_make_usb.sh
+
+      - name: Unit-test cached OpenCore selector without network
+        run: |
+          mkdir -p cache/opencore/0.0.0/DEBUG/Docs \
+                   cache/opencore/0.0.0/DEBUG/IA32/EFI/OC \
+                   cache/opencore/0.0.0/DEBUG/IA32/EFI/BOOT \
+                   cache/opencore/0.0.0/DEBUG/Utilities/LegacyBoot
+          : > cache/opencore/0.0.0/DEBUG/Docs/Sample.plist
+          : > cache/opencore/0.0.0/DEBUG/IA32/EFI/OC/OpenCore.efi
+          : > cache/opencore/0.0.0/DEBUG/IA32/EFI/BOOT/BOOTIA32.efi
+          : > cache/opencore/0.0.0/DEBUG/Utilities/LegacyBoot/bootIA32
+          : > cache/opencore/0.0.0/DEBUG/Utilities/LegacyBoot/boot0
+          : > cache/opencore/0.0.0/DEBUG/Utilities/LegacyBoot/boot1f32
+          cat > cache/current-sources.env <<'EOF'
+          OC_VERSION=old
+          OC_VARIANT=DEBUG
+          OC_CACHE_REL=opencore/old/DEBUG
+          HFS_32_FILE=keep-this-value
+          LEGACY_KEXTS_CACHE_REL=keep-this-too
+          EOF
+          bash scripts/select_opencore_release.sh --select-only --version 0.0.0 --variant debug
+          grep -q '^OC_VERSION=0.0.0$' cache/current-sources.env
+          grep -q '^OC_VARIANT=DEBUG$' cache/current-sources.env
+          grep -q '^OC_CACHE_REL=opencore/0.0.0/DEBUG$' cache/current-sources.env
+          grep -q '^HFS_32_FILE=keep-this-value$' cache/current-sources.env
+          grep -q '^LEGACY_KEXTS_CACHE_REL=keep-this-too$' cache/current-sources.env
+
+      - name: Validate audited ASUS 1215P metadata
+        run: |
+          grep -q 'PROFILE_STATUS=experimental' profiles/asus-eee-pc-1215p/snowleopard/profile.conf
+          grep -q 'CUSTOM_KERNEL_REQUIRED=YES' profiles/asus-eee-pc-1215p/snowleopard/profile.conf
+          grep -q 'KERNEL_ARCH=i386' profiles/asus-eee-pc-1215p/snowleopard/profile.conf
+          grep -q 'TARGET_ETHERNET="Qualcomm Atheros AR8152 v2 1969:2062' profiles/asus-eee-pc-1215p/hardware.conf
+          grep -q 'TARGET_WIFI="Qualcomm Atheros AR9285 168C:002B' profiles/asus-eee-pc-1215p/hardware.conf
+          grep -q 'TARGET_AUDIO="Intel HDA 8086:27D8 subsystem 1043:841C + Realtek ALC269VB 10EC:0269"' profiles/asus-eee-pc-1215p/hardware.conf
+          grep -q 'TARGET_ACPI_PCI_ROOT_UID="0"' profiles/asus-eee-pc-1215p/hardware.conf
+          grep -q 'GFX_NATIVE_PRIMARY_ID="8086:A011"' profiles/asus-eee-pc-1215p/gma3150.conf
+          grep -q 'GFX_CURSOR_PATCH_IDENTIFIER="com.apple.driver.AppleIntelIntegratedFramebuffer"' profiles/asus-eee-pc-1215p/gma3150.conf
+          grep -q 'GFX_CURSOR_PATCH_MAX_KERNEL="11.99.99"' profiles/asus-eee-pc-1215p/gma3150.conf
+
+      - name: Unit-test ASUS GMA3150 config postprocessor
+        run: |
+          python3 - <<'PY'
+          import plistlib, pathlib, subprocess, tempfile
+          config = {
+              'DeviceProperties': {'Add': {}, 'Delete': {}},
+              'Kernel': {'Patch': [], 'Scheme': {'KernelArch':'i386','CustomKernel':True,'FuzzyMatch':True}},
+              'NVRAM': {'Add': {'7C436110-AB2A-4BBB-A880-FE41995C9F82': {'boot-args':'-v'}}},
+              'PlatformInfo': {'Generic': {}},
+              'UEFI': {'Drivers': []},
+          }
+          with tempfile.TemporaryDirectory() as td:
+              p = pathlib.Path(td) / 'config.plist'
+              with p.open('wb') as f: plistlib.dump(config, f)
+              for _ in range(2):
+                  subprocess.run(['python3','scripts/patch_asus_1215p_oc_config.py',str(p)], check=True)
+              subprocess.run(['python3','scripts/patch_asus_1215p_oc_config.py','--check',str(p)], check=True)
+              cfg = plistlib.load(p.open('rb'))
+              matches = [x for x in cfg['Kernel']['Patch'] if x.get('Comment') == 'GMA 3150 Cursor corruption fix']
+              assert len(matches) == 1
+              assert cfg['DeviceProperties']['Add']['PciRoot(0x0)/Pci(0x2,0x0)']['device-id'] == bytes.fromhex('A2270000')
+              assert cfg['NVRAM']['Add']['7C436110-AB2A-4BBB-A880-FE41995C9F82']['boot-args'].split().count('arch=i386') == 1
+          print('ASUS config postprocessor: PASS')
+          PY profiles/asrock-fm2a58m-vg3-a8-7600/hardware.conf
           grep -q 'VoodooTSCSync.kext' profiles/asrock-fm2a58m-vg3-a8-7600/mavericks/kexts.conf
           grep -q 'RealtekRTL8111.kext' profiles/asrock-fm2a58m-vg3-a8-7600/mavericks/kexts.conf
           python3 - <<'PY'
