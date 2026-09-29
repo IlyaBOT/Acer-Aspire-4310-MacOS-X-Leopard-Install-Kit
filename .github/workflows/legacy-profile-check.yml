@@ -14,6 +14,7 @@ on:
       - 'scripts/generic_pc_profile.py'
       - 'scripts/generate_target_oc_config.py'
       - 'scripts/download_a8_mavericks_assets.sh'
+      - 'scripts/download_carnations_amd_kernel.sh'
       - 'scripts/build_carnations_opencore.sh'
       - 'scripts/apply_mavericks_amd_kernel.sh'
       - 'scripts/prepare_asrock_a8_mavericks.sh'
@@ -37,6 +38,7 @@ on:
       - 'scripts/generic_pc_profile.py'
       - 'scripts/generate_target_oc_config.py'
       - 'scripts/download_a8_mavericks_assets.sh'
+      - 'scripts/download_carnations_amd_kernel.sh'
       - 'scripts/build_carnations_opencore.sh'
       - 'scripts/apply_mavericks_amd_kernel.sh'
       - 'scripts/prepare_asrock_a8_mavericks.sh'
@@ -65,6 +67,7 @@ jobs:
           python3 -m py_compile scripts/generic_pc_profile.py
           python3 -m py_compile scripts/generate_target_oc_config.py
           bash -n scripts/download_a8_mavericks_assets.sh
+          bash -n scripts/download_carnations_amd_kernel.sh
           bash -n scripts/build_carnations_opencore.sh
           bash -n scripts/apply_mavericks_amd_kernel.sh
           bash -n scripts/prepare_asrock_a8_mavericks.sh
@@ -119,6 +122,15 @@ jobs:
           ./legacy_macos_install.sh --target asus-eee-pc-1215p --os lion --doctor
           ./legacy_macos_install.sh --target asrock-fm2a58m-vg3-a8-7600 --os mavericks --doctor
           ./legacy_macos_install.sh --target emachines-d640-n930 --usb-probe --list
+
+      - name: Validate Carnations AMD mach_kernel selector
+        run: |
+          grep -q 'snowleopard).*32e2a01c88a46a15f33b4cd69f88251cc0a6961a' scripts/download_carnations_amd_kernel.sh ||             grep -q '32e2a01c88a46a15f33b4cd69f88251cc0a6961a' scripts/download_carnations_amd_kernel.sh
+          grep -q 'b9278deff8281dbd45f848d881c0f33071198d14' scripts/download_carnations_amd_kernel.sh
+          grep -q '68cc1f3cae39ae0e85abb00b9ab6c0c81d5b4d28' scripts/download_carnations_amd_kernel.sh
+          grep -q 'cfdf0513edd8c57ed7f9b7c2d1f90090425b00fd' scripts/download_carnations_amd_kernel.sh
+          grep -q -- '--os mavericks --output "$AMD_ROOT/mach_kernel"' scripts/download_a8_mavericks_assets.sh
+          bash scripts/download_carnations_amd_kernel.sh --help | grep -q 'snowleopard | lion | mountainlion | mavericks'
 
       - name: Validate A8-7600 Mavericks AMD profile and patch specialization
         run: |

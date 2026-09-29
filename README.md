@@ -40,10 +40,19 @@ Kaveri Radeon R7 iGPU and a discrete Turks XT Radeon HD 6670/7670.
 The Mavericks path is pinned to Carnations Botanica's legacy AMD work:
 `AMD-Kernel-Patches@f6860343d6a13ae954a0043cecb04a809faba0f8`,
 including `10-9-Mavericks.plist` and the stock DEBUG
-`extras/kernels/mavericks/mach_kernel`. The generator automatically changes
+`extras/kernels/mavericks/mach_kernel`. The kernel is downloaded automatically
+by the build/download pipeline and verified against the pinned Git blob SHA
+before it is cached or copied into the target payload. The generator automatically changes
 the Mavericks `cpuid_cores_per_package` patch to four physical cores, enables
 `ProvideCurrentCpuInfo` and `FixupAppleEfiImages`, and sets first bring-up to
 `KernelCache=Cacheless`.
+
+
+The generic helper `scripts/download_carnations_amd_kernel.sh` can also select
+the matching pinned `mach_kernel` for `snowleopard`, `lion`,
+`mountainlion`, or `mavericks`. For the A8-7600 target this selection is
+automatic: `--download`, `--build`, and `--apply-kernel` will fetch the
+Mavericks kernel when it is not already present in cache.
 
 Mavericks also requires TSC synchronization for this patch set. The default
 minimal kext set therefore includes FakeSMC, NullCPUPowerManagement,
