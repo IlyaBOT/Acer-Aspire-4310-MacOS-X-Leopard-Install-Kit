@@ -5,6 +5,8 @@ ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)"
 CACHE_ROOT="${CARNATIONS_OC_CACHE:-$ROOT_DIR/cache/carnations-opencore}"
 SOURCE_REPO="https://github.com/Carnations-Botanica/OpenCorePkg.git"
 SOURCE_COMMIT="4d0803b5c1dbb12378e35712b213e531adde1d88"
+AUDK_BRANCH="audk-stable-202502"
+AUDK_COMMIT="f57172652dc48efac882d0cde416676e4fe4f05a"
 SOURCE_DIR="$CACHE_ROOT/src-$SOURCE_COMMIT"
 DIST_DIR="$CACHE_ROOT/$SOURCE_COMMIT"
 ARCHIVE=""
@@ -25,6 +27,9 @@ Usage:
 
 --ensure uses an already extracted cache when available. Otherwise it builds the
 pinned royalDevelopment commit with the repository's Docker build targets.
+
+The source build pins audk-stable-202502. This Carnations fork is based on the
+OpenCore 1.0.5-era EDK2 interface and does not build against current audk master.
 EOF
 }
 
@@ -53,6 +58,49 @@ PY
   validate_root "$DIST_DIR" || die "Archive does not contain the expected X64 OpenCore/OpenDuet distribution"
   printf '%s\n' "$SOURCE_COMMIT" > "$DIST_DIR/CARNATIONS_SOURCE_COMMIT"
   log "Prepared $DIST_DIR"
+}
+
+prepare_source_compat() {
+  local dockerfile="$SOURCE_DIR/Dockerfiles/oc-dev/Dockerfile"
+  local tool
+
+  [[ -f "$dockerfile" ]] || die "Carnations Dockerfile is missing: $dockerfile"
+
+  python3 - "$dockerfile" <<'PY'
+from pathlib import Path
+import sys
+p=Path(sys.argv[1])
+s=p.read_text()
+old1='    wget https://apt.llvm.org/llvm.sh && chmod +x llvm.sh && ./llvm.sh ${OC_DEV_EDK2_LLVM_VER} && rm -f llvm.sh && \\'
+old2='    wget https://apt.llvm.org/llvm.sh && chmod +x llvm.sh && sed -i \'/check_url.*GPG_KEY_URL/d\' llvm.sh && ./llvm.sh ${OC_DEV_EDK2_LLVM_VER} && rm -f llvm.sh && \\'
+new='    curl -fsSL https://apt.llvm.org/llvm-snapshot.gpg.key -o /etc/apt/trusted.gpg.d/apt.llvm.org.asc && \\\n    echo "deb [signed-by=/etc/apt/trusted.gpg.d/apt.llvm.org.asc] https://apt.llvm.org/jammy/ llvm-toolchain-jammy-${OC_DEV_EDK2_LLVM_VER} main" > /etc/apt/sources.list.d/llvm.list && \\\n    apt-get update && \\\n    apt-get install -y clang-${OC_DEV_EDK2_LLVM_VER} lldb-${OC_DEV_EDK2_LLVM_VER} lld-${OC_DEV_EDK2_LLVM_VER} clangd-${OC_DEV_EDK2_LLVM_VER} && \\'
+if new not in s:
+    if old1 in s:
+        s=s.replace(old1,new,1)
+    elif old2 in s:
+        s=s.replace(old2,new,1)
+    else:
+        raise SystemExit("unexpected LLVM install stanza in Carnations Dockerfile")
+p.write_text(s)
+PY
+
+  for tool in build_oc.tool build_duet.tool; do
+    python3 - "$SOURCE_DIR/$tool" "$AUDK_BRANCH" <<'PY'
+from pathlib import Path
+import sys
+p=Path(sys.argv[1]); branch=sys.argv[2]; s=p.read_text()
+needle='src=$(curl -LfsS https://raw.githubusercontent.com/acidanthera/ocbuild/master/efibuild.sh) && eval "$src" || exit 1'
+repl='src=$(curl -LfsS https://raw.githubusercontent.com/acidanthera/ocbuild/master/efibuild.sh) || exit 1\nsrc=$(printf \'%s\\n\' "$src" | sed \'s#updaterepo "https://github.com/acidanthera/audk" UDK master#updaterepo "https://github.com/acidanthera/audk" UDK '+branch+'#\')\neval "$src" || exit 1'
+if repl not in s:
+    if needle not in s:
+        raise SystemExit(f"unexpected efibuild bootstrap in {p}")
+    s=s.replace(needle,repl,1)
+p.write_text(s)
+PY
+  done
+
+  rm -rf -- "$SOURCE_DIR/UDK"
+  log "Pinned build dependencies: $AUDK_BRANCH ($AUDK_COMMIT)"
 }
 
 select_built_archive() {
@@ -105,9 +153,11 @@ build_from_source() {
   fi
   [[ "$(git -C "$SOURCE_DIR" rev-parse HEAD)" == "$SOURCE_COMMIT" ]] || die "OpenCore source pin mismatch"
 
-  log "Building OpenDuet from pinned Carnations Botanica fork"
+  prepare_source_compat
+
+  log "Building OpenDuet from pinned Carnations Botanica fork against $AUDK_BRANCH"
   (cd "$SOURCE_DIR" && docker compose run --rm build-duet)
-  log "Building OpenCore from pinned Carnations Botanica fork"
+  log "Building OpenCore from pinned Carnations Botanica fork against $AUDK_BRANCH"
   (cd "$SOURCE_DIR" && docker compose run --rm build-oc)
 
   built="$(select_built_archive)"
