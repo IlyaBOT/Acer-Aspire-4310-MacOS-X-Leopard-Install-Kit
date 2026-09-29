@@ -9,6 +9,7 @@ AUDK_BRANCH="audk-stable-202502"
 AUDK_COMMIT="f57172652dc48efac882d0cde416676e4fe4f05a"
 SOURCE_DIR="$CACHE_ROOT/src-$SOURCE_COMMIT"
 LOCAL_PATCH_REV="2"
+PATCH_MARKER="Original mach_kernel is absent, trying ESP Kernels fallback"
 DIST_DIR="$CACHE_ROOT/${SOURCE_COMMIT}-r${LOCAL_PATCH_REV}"
 ARCHIVE=""
 BUNDLED_ARCHIVE="${CARNATIONS_OC_BUNDLED_ARCHIVE:-$ROOT_DIR/vendor/carnations-opencore/OpenCore-1.0.5-DEBUG.zip}"
@@ -16,6 +17,46 @@ BUNDLED_ARCHIVE="${CARNATIONS_OC_BUNDLED_ARCHIVE:-$ROOT_DIR/vendor/carnations-op
 log() { printf '[carnations-opencore] %s\n' "$*"; }
 die() { printf '[carnations-opencore] ERROR: %s\n' "$*" >&2; exit 1; }
 have() { command -v "$1" >/dev/null 2>&1; }
+
+binary_has_local_patch() {
+  local binary="$1"
+  [[ -f "$binary" ]] || return 1
+  have python3 || return 1
+  python3 - "$binary" "$PATCH_MARKER" <<'PY'
+from pathlib import Path
+import sys
+
+path = Path(sys.argv[1])
+marker = sys.argv[2].encode("ascii")
+try:
+    data = path.read_bytes()
+except OSError:
+    raise SystemExit(1)
+raise SystemExit(0 if marker in data else 1)
+PY
+}
+
+archive_has_local_patch() {
+  local archive="$1"
+  [[ -f "$archive" ]] || return 1
+  have python3 || return 1
+  python3 - "$archive" "$PATCH_MARKER" <<'PY'
+import sys
+import zipfile
+
+archive = sys.argv[1]
+marker = sys.argv[2].encode("ascii")
+member = "X64/EFI/OC/OpenCore.efi"
+
+try:
+    with zipfile.ZipFile(archive) as zf:
+        data = zf.read(member)
+except (OSError, KeyError, zipfile.BadZipFile):
+    raise SystemExit(1)
+
+raise SystemExit(0 if marker in data else 1)
+PY
+}
 
 usage() {
   cat <<'EOF'
@@ -49,6 +90,7 @@ validate_root() {
   [[ -f "$root/Utilities/LegacyBoot/bootX64" ]] || return 1
   [[ -f "$root/Utilities/LegacyBoot/boot0" ]] || return 1
   [[ -f "$root/Utilities/LegacyBoot/boot1f32" ]] || return 1
+  binary_has_local_patch "$root/X64/EFI/OC/OpenCore.efi" || return 1
 }
 
 extract_archive() {
@@ -283,12 +325,23 @@ case "$MODE" in
   ensure)
     if validate_root "$DIST_DIR"; then
       log "Using cached pinned OpenCore fork: $DIST_DIR"
-    elif [[ -f "$BUNDLED_ARCHIVE" ]]; then
-      log "Preparing bundled OpenCore archive: $BUNDLED_ARCHIVE"
-      extract_archive "$BUNDLED_ARCHIVE"
     else
-      log "Bundled OpenCore archive not found; falling back to source build"
-      build_from_source
+      if [[ -d "$DIST_DIR" ]]; then
+        log "Cached OpenCore is incomplete or lacks local patch r$LOCAL_PATCH_REV; discarding $DIST_DIR"
+        rm -rf -- "$DIST_DIR"
+      fi
+
+      if [[ -f "$BUNDLED_ARCHIVE" ]] && archive_has_local_patch "$BUNDLED_ARCHIVE"; then
+        log "Preparing bundled OpenCore archive: $BUNDLED_ARCHIVE"
+        extract_archive "$BUNDLED_ARCHIVE"
+      else
+        if [[ -f "$BUNDLED_ARCHIVE" ]]; then
+          log "Bundled OpenCore archive lacks local patch r$LOCAL_PATCH_REV marker; falling back to source build"
+        else
+          log "Bundled OpenCore archive not found; falling back to source build"
+        fi
+        build_from_source
+      fi
     fi
     ;;
   print)
