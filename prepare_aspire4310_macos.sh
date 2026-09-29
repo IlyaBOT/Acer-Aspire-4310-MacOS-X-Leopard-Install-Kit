@@ -120,7 +120,7 @@ Build choices:
   --hfs-driver auto|legacy|32|openhfs     default: auto
   --kernel auto|vanilla|custom            default: auto
   --boot-preset normal|verbose|safe|diagnostic
-  --kext-set smc|minimal|full             default: minimal
+  --kext-set smc|minimal|sensors|full     default: minimal
   --sata native|injected                  default: native
   --acpi native|patched                   default: native
   --apic native|drop-duplicate            default: drop-duplicate
@@ -653,6 +653,7 @@ copy_profile_kexts() {
     case "$set_name" in
       smc) ;;
       minimal) [[ "$KEXT_SET" != "smc" ]] || continue ;;
+      sensor) [[ "$KEXT_SET" == "sensors" || "$KEXT_SET" == "full" ]] || continue ;;
       full) [[ "$KEXT_SET" == "full" ]] || continue ;;
       sata) [[ "$SATA_MODE" == "injected" ]] || continue ;;
       *) continue ;;
@@ -725,9 +726,20 @@ custom_kernel_available() {
 }
 
 collect_kext_arguments() {
-  local oc_root="$1"
-  find "$oc_root/Kexts" -type d -name '*.kext' -print 2>/dev/null \
-    | sed "s#^$oc_root/Kexts/##" | LC_ALL=C sort
+  local oc_root="$1" relative
+  # FakeSMC plugins such as CPUi resolve symbols exported by FakeSMC but do not
+  # declare a formal OSBundleLibraries dependency on org.netkas.fakesmc. Keep
+  # FakeSMC first in Kernel/Add, then retain deterministic lexical ordering.
+  while IFS= read -r relative; do
+    [[ -n "$relative" ]] || continue
+    case "$relative" in
+      fakesmc.kext) printf '0\t%s\n' "$relative" ;;
+      *) printf '1\t%s\n' "$relative" ;;
+    esac
+  done < <(
+    find "$oc_root/Kexts" -type d -name '*.kext' -print 2>/dev/null \
+      | sed "s#^$oc_root/Kexts/##"
+  ) | LC_ALL=C sort | cut -f2-
 }
 
 collect_acpi_arguments() {
@@ -1425,7 +1437,7 @@ done
 case "$OS_PROFILE" in leopard|snowleopard) ;; *) die "--os must be leopard or snowleopard" ;; esac
 case "$KERNEL_MODE" in auto|vanilla|custom) ;; *) die "--kernel must be auto, vanilla, or custom" ;; esac
 case "$BOOT_PRESET" in normal|verbose|safe|diagnostic) ;; *) die "Invalid --boot-preset" ;; esac
-case "$KEXT_SET" in smc|minimal|full) ;; *) die "--kext-set must be smc, minimal, or full" ;; esac
+case "$KEXT_SET" in smc|minimal|sensors|full) ;; *) die "--kext-set must be smc, minimal, sensors, or full" ;; esac
 case "$SATA_MODE" in native|injected) ;; *) die "--sata must be native or injected" ;; esac
 case "$ACPI_MODE" in native|patched) ;; *) die "--acpi must be native or patched" ;; esac
 case "$APIC_MODE" in native|drop-duplicate) ;; *) die "--apic must be native or drop-duplicate" ;; esac
