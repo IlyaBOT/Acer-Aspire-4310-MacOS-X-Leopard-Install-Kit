@@ -149,6 +149,8 @@ jobs:
           grep -q -- '--custom-kernel' scripts/prepare_asrock_a8_mavericks.sh
           grep -q -- '--driver OpenHfsPlus.efi' scripts/prepare_asrock_a8_mavericks.sh
           grep -q -- '--driver OpenPartitionDxe.efi' scripts/prepare_asrock_a8_mavericks.sh
+          grep -q 'LOCAL_PATCH_REV="2"' scripts/build_carnations_opencore.sh
+          grep -q 'Original mach_kernel is absent, trying ESP Kernels fallback' scripts/build_carnations_opencore.sh
           grep -q 'ESP/Kernels/mach_kernel' scripts/prepare_asrock_a8_mavericks.sh
           python3 - <<'PY'
           from pathlib import Path
