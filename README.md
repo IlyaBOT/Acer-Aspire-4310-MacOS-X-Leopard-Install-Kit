@@ -36,6 +36,22 @@ The first physical match-trace boot appeared to stop around `IOResources: family
 ./legacy_macos_install.sh --list-profiles
 ```
 
+For an unknown x86/x86_64 PC, do **not** borrow the Acer profile just to inspect
+hardware. Use the universal analyzer:
+
+```bash
+./legacy_macos_install.sh --profile universal --doctor
+./legacy_macos_install.sh --profile new --os mavericks --doctor
+```
+
+`--profile universal` performs a read-only live analysis. `--profile new`
+collects CPU/DMI/PCI/USB/storage/input/power data, emits `WARN` for missing or
+unreliable fields, then asks for a profile name. The default name is generated
+from `OS hostname + CPU model + i386/AMD64 + PC/Laptop`. Generated profiles
+are local/private by default under `profiles/generated/`; they are
+analysis-only and do not automatically choose an SMBIOS, kernel, kext or ACPI
+strategy. See [docs/GENERIC_X86_PROFILE.md](docs/GENERIC_X86_PROFILE.md).
+
 Acer Aspire 4310 examples:
 
 ```bash
@@ -135,6 +151,13 @@ profiles/
       kexts.conf
     lion/
       profile.conf
+
+  generated/
+    README.md
+    <local-profile>/        # ignored by Git by default
+      hardware.conf
+      profile.conf
+      profile.json
 ```
 
 Compatibility symlinks keep the old Acer engine and the existing D640 Snow Leopard implementation working without duplicating profile data.
