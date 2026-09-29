@@ -23,6 +23,7 @@ kept intact behind target/OS profiles.
 Usage:
   ./legacy_macos_install.sh --target acer-aspire-4310 --os leopard --doctor
   ./legacy_macos_install.sh --target acer-aspire-4310 --os snowleopard --build
+  ./legacy_macos_install.sh --target acer-aspire-4310-c2d-t7400 --os snowleopard --build --kext-set sensors
   ./legacy_macos_install.sh --target emachines-d640-n930 --os snowleopard --doctor
   ./legacy_macos_install.sh --target emachines-d640-n930 --os snowleopard --make-usb --disk /dev/sdX --retail /path/to.iso
   ./legacy_macos_install.sh --target asus-eee-pc-1215p --os snowleopard --doctor
@@ -73,7 +74,7 @@ Legacy-BIOS USB probe (explicitly destructive and opt-in):
   sudo ./legacy_macos_install.sh --target emachines-d640-n930 --usb-probe --disk /dev/sdX --case mbr-direct
 
 Target selection:
-  --target acer-aspire-4310 | emachines-d640-n930 | asus-eee-pc-1215p | asrock-fm2a58m-vg3-a8-7600
+  --target acer-aspire-4310 | acer-aspire-4310-c2d-t7400 | emachines-d640-n930 | asus-eee-pc-1215p | asrock-fm2a58m-vg3-a8-7600
   --os leopard | snowleopard | lion | mountainlion | mavericks
 
 All other arguments are passed to the selected implementation. The original
@@ -92,7 +93,8 @@ need_value() { [[ $# -gt 1 ]] || die "$1 requires a value"; }
 
 list_targets() {
   cat <<'EOF'
-acer-aspire-4310       Acer Aspire 4310 / Celeron M 520 / GMA950
+acer-aspire-4310       Acer Aspire 4310 / stock Celeron M 520 / GMA950
+acer-aspire-4310-c2d-t7400  Acer Aspire 4310 / Core 2 Duo T7400 upgrade / GMA950
 emachines-d640-n930    eMachines D640 / Phenom II N930 / Mobility Radeon HD 5470
 asus-eee-pc-1215p      ASUS Eee PC 1215P / Atom N570 / GMA3150
 asrock-fm2a58m-vg3-a8-7600  ASRock FM2A58M-VG3+ R2.0 / AMD A8-7600 / Radeon HD 6670
@@ -117,7 +119,7 @@ list_generated_profiles() {
 
 list_profiles() {
   local target os file status method name
-  for target in acer-aspire-4310 emachines-d640-n930 asus-eee-pc-1215p asrock-fm2a58m-vg3-a8-7600; do
+  for target in acer-aspire-4310 acer-aspire-4310-c2d-t7400 emachines-d640-n930 asus-eee-pc-1215p asrock-fm2a58m-vg3-a8-7600; do
     for os in leopard snowleopard lion mountainlion mavericks; do
       file="$PROFILES_DIR/$target/$os/profile.conf"
       [[ -f "$file" ]] || continue
@@ -225,7 +227,7 @@ fi
 
 [[ -n "$TARGET" ]] || TARGET="acer-aspire-4310"
 case "$TARGET" in
-  acer-aspire-4310|emachines-d640-n930|asus-eee-pc-1215p|asrock-fm2a58m-vg3-a8-7600) ;;
+  acer-aspire-4310|acer-aspire-4310-c2d-t7400|emachines-d640-n930|asus-eee-pc-1215p|asrock-fm2a58m-vg3-a8-7600) ;;
   *) die "unknown target '$TARGET' (use --list-targets)" ;;
 esac
 
@@ -238,7 +240,7 @@ fi
 if [[ -z "$OS_PROFILE" ]]; then
   case "$TARGET" in
     acer-aspire-4310) OS_PROFILE="leopard" ;;
-    emachines-d640-n930|asus-eee-pc-1215p) OS_PROFILE="snowleopard" ;;
+    acer-aspire-4310-c2d-t7400|emachines-d640-n930|asus-eee-pc-1215p) OS_PROFILE="snowleopard" ;;
     asrock-fm2a58m-vg3-a8-7600) OS_PROFILE="mavericks" ;;
   esac
 fi
@@ -280,6 +282,11 @@ case "$TARGET:$OS_PROFILE" in
   acer-aspire-4310:leopard|acer-aspire-4310:snowleopard)
     log "target=$TARGET os=$OS_PROFILE engine=prepare_aspire4310_macos.sh"
     run_with_optional_opencore_selection "$ROOT_DIR/prepare_aspire4310_macos.sh" --os "$OS_PROFILE" "${FORWARD[@]}"
+    ;;
+  acer-aspire-4310-c2d-t7400:snowleopard)
+    log "target=$TARGET os=$OS_PROFILE engine=prepare_aspire4310_macos.sh variant=Core2Duo-T7400"
+    run_with_optional_opencore_selection env ASPIRE4310_PROFILE_TARGET="$TARGET" \
+      "$ROOT_DIR/prepare_aspire4310_macos.sh" --os "$OS_PROFILE" "${FORWARD[@]}"
     ;;
   emachines-d640-n930:snowleopard)
     D640_ARGS=()
