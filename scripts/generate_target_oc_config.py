@@ -79,6 +79,22 @@ def rom_bytes(text: str) -> bytes:
     return raw.ljust(6, b"\x00")
 
 
+def gpu_blacklist_properties() -> dict:
+    """Return an early IOPCI match poison for a GPU exposed by firmware.
+
+    This does not physically remove the PCI function. It prevents macOS graphics
+    drivers from matching it by replacing its display identity/class properties
+    before normal driver matching begins.
+    """
+    return {
+        "name": "unused",
+        "IOName": "#display",
+        "class-code": b"\xff\xff\xff\xff",
+        "vendor-id": b"\xff\xff\x00\x00",
+        "device-id": b"\xff\xff\x00\x00",
+    }
+
+
 def load_kernel_patches(path: Path, amd_core_count: int | None) -> list[dict]:
     """Load a Kernel/Patch array and optionally specialize the Mavericks AMD core-count patch."""
     with path.open("rb") as handle:
@@ -155,6 +171,15 @@ def main() -> int:
     parser.add_argument("--driver", action="append", default=[])
     parser.add_argument("--kext", action="append", default=[])
     parser.add_argument(
+        "--blacklist-gpu-pci-path",
+        action="append",
+        default=[],
+        help=(
+            "Poison an exposed GPU's macOS IOPCI matching properties at this "
+            "OpenCore PCI path (repeatable)."
+        ),
+    )
+    parser.add_argument(
         "--kernel-patches-plist",
         type=Path,
         help="Import Kernel/Patch entries from an external plist.",
@@ -215,6 +240,13 @@ def main() -> int:
             "TableLength": args.drop_apic_table_length,
             "TableSignature": b"APIC",
         }]
+
+    for pci_path in args.blacklist_gpu_pci_path:
+        if not pci_path.startswith("PciRoot("):
+            parser.error(
+                f"--blacklist-gpu-pci-path must be an OpenCore PciRoot(...) path: {pci_path}"
+            )
+        config["DeviceProperties"]["Add"][pci_path] = gpu_blacklist_properties()
 
     config["Kernel"]["Add"] = [
         read_kext(args.oc_root, path, minimum, maximum, kext_arch) for path in args.kext
