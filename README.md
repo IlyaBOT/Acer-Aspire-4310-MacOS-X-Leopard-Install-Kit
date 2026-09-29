@@ -57,9 +57,13 @@ target pins `Carnations-Botanica/OpenCorePkg` royalDevelopment commit
 that fork with Docker; an already downloaded/built OpenCore archive can instead
 be passed with `--opencore-archive`.
 
-First bring-up should use the discrete Radeon HD 6670/7670 and disable the
-Kaveri iGPU in BIOS when possible. No unverified Kaveri graphics spoof is
-generated automatically.
+First bring-up uses the discrete Radeon HD 6670/7670. Because this board still
+exposes the Kaveri iGPU as PCI 00:01.0 even when firmware setup says it is
+disabled, the generated OpenCore config blacklists
+`PciRoot(0x0)/Pci(0x1,0x0)` for macOS by poisoning its early IOPCI match
+properties (`name=unused`, `IOName=#display`, `class-code=FFFFFFFF`,
+`vendor-id=FFFF`, `device-id=FFFF`). This is intentionally limited to the
+Kaveri 1002:1313 function and leaves the Turks XT 1002:6758 dGPU untouched.
 
 ```bash
 ./legacy_macos_install.sh --target asrock-fm2a58m-vg3-a8-7600 --os mavericks --doctor
