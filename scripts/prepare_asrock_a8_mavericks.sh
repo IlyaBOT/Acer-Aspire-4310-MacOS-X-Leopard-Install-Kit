@@ -127,7 +127,7 @@ run_doctor() {
     else
       case "$cmd" in
         docker)
-          printf '  WARN    %-10s missing; --build needs Docker unless --opencore-archive is supplied\n' "$cmd"
+          printf '  WARN    %-10s missing; only the source-build fallback needs Docker\n' "$cmd"
           ;;
         unzip|file)
           printf '  WARN    %-10s optional quality/inspection tool missing\n' "$cmd"
@@ -147,8 +147,10 @@ run_doctor() {
 
   if bash "$OC_BUILDER" --print-root >/dev/null 2>&1; then
     printf '  OK      modified Carnations OpenCore cache\n'
+  elif [[ -f "$ROOT_DIR/vendor/carnations-opencore/OpenCore-1.0.5-DEBUG.zip" ]]; then
+    printf '  OK      repository-bundled Carnations OpenCore 1.0.5 DEBUG\n'
   else
-    printf '  WARN    modified Carnations OpenCore not prepared\n'
+    printf '  WARN    bundled Carnations OpenCore archive is missing; Docker fallback would be required\n'
   fi
 
   printf '\nRequired profile facts:\n'
