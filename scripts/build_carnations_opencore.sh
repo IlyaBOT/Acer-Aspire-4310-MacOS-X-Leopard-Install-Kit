@@ -192,7 +192,7 @@ patched = '''  Status = OcSafeFileOpen (This, NewHandle, FileName, OpenMode, Att
      && ((Attributes & EFI_FILE_DIRECTORY) == 0)
      && (mCustomKernelDirectory != NULL))
   {
-    NewFileName = OcStrrChr (FileName, L'\\');
+    NewFileName = OcStrrChr (FileName, L'\\\\');
     if (NewFileName == NULL) {
       NewFileName = FileName;
     } else {
@@ -230,6 +230,10 @@ if "Original mach_kernel is absent, trying ESP Kernels fallback" not in s:
     if needle not in s:
         raise SystemExit("unexpected OpenCoreKernel.c layout; cannot apply Mavericks mach_kernel fallback")
     s = s.replace(needle, patched, 1)
+
+expected = "NewFileName = OcStrrChr (FileName, L'\\\\');"
+if expected not in s:
+    raise SystemExit("Mavericks fallback patch produced invalid C backslash escaping")
 
 p.write_text(s)
 PY
