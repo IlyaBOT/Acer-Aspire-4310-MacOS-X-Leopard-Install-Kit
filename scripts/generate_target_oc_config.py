@@ -175,6 +175,11 @@ def main() -> int:
         default=True,
         help="Disable UEFI/Quirks/ReleaseUsbOwnership for firmware that does not require ownership takeover.",
     )
+    parser.add_argument(
+        "--setup-virtual-map",
+        action="store_true",
+        help="Enable Booter/Quirks/SetupVirtualMap for older UEFI firmware.",
+    )
     parser.add_argument("--driver", action="append", default=[])
     parser.add_argument("--kext", action="append", default=[])
     parser.add_argument(
@@ -212,7 +217,7 @@ def main() -> int:
 
     booter = config["Booter"]["Quirks"]
     booter["FixupAppleEfiImages"] = True
-    booter["SetupVirtualMap"] = False
+    booter["SetupVirtualMap"] = args.setup_virtual_map
     if args.runtime_profile == "off":
         booter["EnableSafeModeSlide"] = False
         booter["EnableWriteUnprotector"] = False
