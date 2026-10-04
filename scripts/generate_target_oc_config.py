@@ -168,6 +168,18 @@ def main() -> int:
         default=env_yes("TARGET_PROVIDE_CURRENT_CPU_INFO"),
     )
     parser.add_argument("--no-provide-current-cpu-info", dest="provide_current_cpu_info", action="store_false")
+    parser.add_argument(
+        "--no-release-usb-ownership",
+        dest="release_usb_ownership",
+        action="store_false",
+        default=True,
+        help="Disable UEFI/Quirks/ReleaseUsbOwnership for firmware that does not require ownership takeover.",
+    )
+    parser.add_argument(
+        "--setup-virtual-map",
+        action="store_true",
+        help="Enable Booter/Quirks/SetupVirtualMap for older UEFI firmware.",
+    )
     parser.add_argument("--driver", action="append", default=[])
     parser.add_argument("--kext", action="append", default=[])
     parser.add_argument(
@@ -205,7 +217,7 @@ def main() -> int:
 
     booter = config["Booter"]["Quirks"]
     booter["FixupAppleEfiImages"] = True
-    booter["SetupVirtualMap"] = False
+    booter["SetupVirtualMap"] = args.setup_virtual_map
     if args.runtime_profile == "off":
         booter["EnableSafeModeSlide"] = False
         booter["EnableWriteUnprotector"] = False
@@ -352,7 +364,7 @@ def main() -> int:
     input_config["KeySupportMode"] = "V1"
     config["UEFI"]["Output"]["ProvideConsoleGop"] = True
     config["UEFI"]["Output"]["Resolution"] = "Max"
-    config["UEFI"]["Quirks"]["ReleaseUsbOwnership"] = True
+    config["UEFI"]["Quirks"]["ReleaseUsbOwnership"] = args.release_usb_ownership
     config["UEFI"]["Quirks"]["RequestBootVarRouting"] = False
 
     config["#Revision"] = (
