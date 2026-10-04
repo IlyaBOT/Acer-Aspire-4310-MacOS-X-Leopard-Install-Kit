@@ -133,6 +133,8 @@ jobs:
           grep -q '68cc1f3cae39ae0e85abb00b9ab6c0c81d5b4d28' scripts/download_carnations_amd_kernel.sh
           grep -q 'cfdf0513edd8c57ed7f9b7c2d1f90090425b00fd' scripts/download_carnations_amd_kernel.sh
           grep -q -- '--os mavericks --output "$AMD_ROOT/mach_kernel"' scripts/download_a8_mavericks_assets.sh
+          grep -q 'extras/10-9-Mavericks-DEBUG.plist' scripts/download_a8_mavericks_assets.sh
+          grep -q '74a66adc97b2665eded59c5972f08ec149a985d3' scripts/download_a8_mavericks_assets.sh
           bash scripts/download_carnations_amd_kernel.sh --help | grep -q 'snowleopard | lion | mountainlion | mavericks'
 
       - name: Validate A8-7600 Mavericks AMD profile and patch specialization
@@ -163,6 +165,7 @@ jobs:
           grep -q 'ESP kernelcache missing under Cacheless; trying mach_kernel instead' scripts/build_carnations_opencore.sh
           grep -q 'ESP mach_kernel-for-kernelcache fallback status' scripts/build_carnations_opencore.sh
           grep -q 'ESP/Kernels/mach_kernel' scripts/prepare_asrock_a8_mavericks.sh
+          grep -q '10-9-Mavericks-DEBUG.plist' scripts/prepare_asrock_a8_mavericks.sh
           python3 - <<'PY'
           from pathlib import Path
           s = Path("scripts/prepare_asrock_a8_mavericks.sh").read_text()
@@ -188,34 +191,38 @@ jobs:
           mod = importlib.util.module_from_spec(spec)
           spec.loader.exec_module(mod)
 
-          patch = {
-              "Kernel": {
-                  "Patch": [
-                      {
-                          "Arch": "x86_64",
-                          "Base": "_cpuid_set_info",
-                          "Comment": "_cpuid_set_info | Force cpuid_cores_per_package",
-                          "Count": 1,
-                          "Enabled": True,
-                          "Find": bytes.fromhex("c1ea1affc2"),
-                          "Identifier": "kernel",
-                          "Limit": 0,
-                          "Mask": b"",
-                          "MaxKernel": "13.99.99",
-                          "MinKernel": "13.0.0",
-                          "Replace": bytes.fromhex("ba00000000"),
-                          "ReplaceMask": b"",
-                          "Skip": 0,
-                      }
-                  ]
+          for template, expected in (
+              ("ba00000000", "ba04000000"),
+              ("b8000000000f1f00", "b8040000000f1f00"),
+          ):
+              patch = {
+                  "Kernel": {
+                      "Patch": [
+                          {
+                              "Arch": "x86_64",
+                              "Base": "_cpuid_set_info",
+                              "Comment": "_cpuid_set_info | Force cpuid_cores_per_package",
+                              "Count": 1,
+                              "Enabled": True,
+                              "Find": bytes.fromhex("c1ea1affc2"),
+                              "Identifier": "kernel",
+                              "Limit": 0,
+                              "Mask": b"",
+                              "MaxKernel": "13.99.99",
+                              "MinKernel": "13.0.0",
+                              "Replace": bytes.fromhex(template),
+                              "ReplaceMask": b"",
+                              "Skip": 0,
+                          }
+                      ]
+                  }
               }
-          }
-          with tempfile.TemporaryDirectory() as td:
-              p = pathlib.Path(td) / "patch.plist"
-              with p.open("wb") as f:
-                  plistlib.dump(patch, f)
-              patches = mod.load_kernel_patches(p, 4)
-              assert patches[0]["Replace"] == bytes.fromhex("ba04000000")
+              with tempfile.TemporaryDirectory() as td:
+                  p = pathlib.Path(td) / "patch.plist"
+                  with p.open("wb") as f:
+                      plistlib.dump(patch, f)
+                  patches = mod.load_kernel_patches(p, 4)
+                  assert patches[0]["Replace"] == bytes.fromhex(expected)
           assert mod.KERNEL_RANGES["mavericks"] == ("13.0.0", "13.99.99")
           poison = mod.gpu_blacklist_properties()
           assert poison["name"] == "unused"
