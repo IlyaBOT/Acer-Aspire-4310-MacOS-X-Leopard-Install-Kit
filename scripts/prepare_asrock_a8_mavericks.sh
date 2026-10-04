@@ -347,7 +347,7 @@ patches=c["Kernel"]["Patch"]
 assert len(patches) >= 10
 core=[p for p in patches if "cpuid_cores_per_package" in p.get("Comment","")]
 assert len(core)==1
-assert core[0]["Replace"] == b"\xba"+bytes([cores])+b"\x00\x00\x00"
+assert core[0]["Replace"] == b"\xb8"+bytes([cores])+b"\x00\x00\x00\x0f\x1f\x00"
 bundles={k["BundlePath"] for k in c["Kernel"]["Add"] if k.get("Enabled")}
 for required in ("fakesmc.kext","NullCPUPowerManagement.kext","VoodooTSCSync.kext","RealtekRTL8111.kext"):
     assert required in bundles, required
@@ -376,7 +376,7 @@ ASRock FM2A58M-VG3+ R2.0 / AMD A8-7600 Mavericks experimental UEFI payload
    KernelArch=x86_64
    KernelCache=Cacheless
 
-5. The Carnations Botanica Mavericks patch set is merged into config.plist.
+5. The Carnations Botanica Mavericks DEBUG patch set is merged into config.plist.
    cpuid_cores_per_package is specialized for 4 physical cores.
 
 6. UEFI memory/profile quirks:
