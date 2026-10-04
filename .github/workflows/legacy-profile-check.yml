@@ -147,6 +147,7 @@ jobs:
           grep -q 'RealtekRTL8111.kext' profiles/asrock-fm2a58m-vg3-a8-7600/mavericks/kexts.conf
           grep -q -- '--runtime-profile legacy' scripts/prepare_asrock_a8_mavericks.sh
           grep -q -- '--setup-virtual-map' scripts/prepare_asrock_a8_mavericks.sh
+          grep -q -- '--force-exit-boot-services' scripts/prepare_asrock_a8_mavericks.sh
           grep -q -- '--custom-kernel' scripts/prepare_asrock_a8_mavericks.sh
           grep -q -- '--no-release-usb-ownership' scripts/prepare_asrock_a8_mavericks.sh
           grep -q 'ReleaseUsbOwnership.*is False' scripts/prepare_asrock_a8_mavericks.sh
@@ -154,6 +155,7 @@ jobs:
           grep -q 'RebuildAppleMemoryMap.*is False' scripts/prepare_asrock_a8_mavericks.sh
           grep -q 'SyncRuntimePermissions.*is False' scripts/prepare_asrock_a8_mavericks.sh
           grep -q 'SetupVirtualMap.*is True' scripts/prepare_asrock_a8_mavericks.sh
+          grep -q 'ForceExitBootServices.*is True' scripts/prepare_asrock_a8_mavericks.sh
           grep -q -- '--driver OpenHfsPlus.efi' scripts/prepare_asrock_a8_mavericks.sh
           grep -q -- '--driver OpenPartitionDxe.efi' scripts/prepare_asrock_a8_mavericks.sh
           grep -q 'LOCAL_PATCH_REV="3"' scripts/build_carnations_opencore.sh
