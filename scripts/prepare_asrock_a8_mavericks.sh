@@ -289,6 +289,7 @@ run_build() {
     --runtime-profile modern
     --custom-kernel
     --provide-current-cpu-info
+    --no-release-usb-ownership
     --blacklist-gpu-pci-path "$TARGET_GPU_INTEGRATED_OC_PATH"
     --driver OpenHfsPlus.efi
     --driver OpenPartitionDxe.efi
@@ -326,6 +327,7 @@ assert c["Kernel"]["Scheme"]["KernelCache"] == "Cacheless"
 assert c["Booter"]["Quirks"]["EnableWriteUnprotector"] is False
 assert c["Booter"]["Quirks"]["RebuildAppleMemoryMap"] is True
 assert c["Booter"]["Quirks"]["SyncRuntimePermissions"] is True
+assert c["UEFI"]["Quirks"]["ReleaseUsbOwnership"] is False
 drivers={d["Path"] for d in c["UEFI"]["Drivers"] if d.get("Enabled")}
 assert "OpenHfsPlus.efi" in drivers
 assert "OpenPartitionDxe.efi" in drivers
@@ -373,7 +375,8 @@ ASRock FM2A58M-VG3+ R2.0 / AMD A8-7600 Mavericks experimental UEFI payload
 5. The Carnations Botanica Mavericks patch set is merged into config.plist.
    cpuid_cores_per_package is specialized for 4 physical cores.
 
-6. UEFI memory profile:
+6. UEFI memory/profile quirks:
+   ReleaseUsbOwnership=NO
    EnableWriteUnprotector=NO
    RebuildAppleMemoryMap=YES
    SyncRuntimePermissions=YES
