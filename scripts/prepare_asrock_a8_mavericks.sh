@@ -288,6 +288,7 @@ run_build() {
     --boot-preset "$BOOT_PRESET"
     --runtime-profile legacy
     --setup-virtual-map
+    --force-exit-boot-services
     --custom-kernel
     --provide-current-cpu-info
     --no-release-usb-ownership
@@ -329,6 +330,7 @@ assert c["Booter"]["Quirks"]["EnableWriteUnprotector"] is True
 assert c["Booter"]["Quirks"]["RebuildAppleMemoryMap"] is False
 assert c["Booter"]["Quirks"]["SyncRuntimePermissions"] is False
 assert c["Booter"]["Quirks"]["SetupVirtualMap"] is True
+assert c["Booter"]["Quirks"]["ForceExitBootServices"] is True
 assert c["UEFI"]["Quirks"]["ReleaseUsbOwnership"] is False
 drivers={d["Path"] for d in c["UEFI"]["Drivers"] if d.get("Enabled")}
 assert "OpenHfsPlus.efi" in drivers
@@ -383,6 +385,7 @@ ASRock FM2A58M-VG3+ R2.0 / AMD A8-7600 Mavericks experimental UEFI payload
    RebuildAppleMemoryMap=NO
    SyncRuntimePermissions=NO
    SetupVirtualMap=YES
+   ForceExitBootServices=YES
 
 7. VoodooTSCSync IOCPUNumber=3 for the 4-core A8-7600.
 
