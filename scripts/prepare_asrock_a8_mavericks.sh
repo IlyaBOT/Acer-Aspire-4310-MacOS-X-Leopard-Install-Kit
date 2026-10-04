@@ -141,7 +141,7 @@ run_doctor() {
   done
 
   printf '\nCaches:\n'
-  [[ -f "$CACHE_ROOT/amd/10-9-Mavericks.plist" ]] && printf '  OK      AMD patch plist\n' || printf '  WARN    AMD patch plist not downloaded\n'
+  [[ -f "$CACHE_ROOT/amd/10-9-Mavericks-DEBUG.plist" ]] && printf '  OK      AMD patch plist\n' || printf '  WARN    AMD patch plist not downloaded\n'
   [[ -f "$CACHE_ROOT/amd/mach_kernel" ]] && printf '  OK      Mavericks DEBUG mach_kernel\n' || printf '  WARN    Mavericks DEBUG mach_kernel not downloaded\n'
   [[ -d "$CACHE_ROOT/kexts/RealtekRTL8111.kext" ]] && printf '  OK      RealtekRTL8111 1.2.3\n' || printf '  WARN    RealtekRTL8111 1.2.3 not downloaded\n'
 
@@ -296,7 +296,7 @@ run_build() {
     --driver OpenHfsPlus.efi
     --driver OpenPartitionDxe.efi
     --driver OpenRuntime.efi
-    --kernel-patches-plist "$CACHE_ROOT/amd/10-9-Mavericks.plist"
+    --kernel-patches-plist "$CACHE_ROOT/amd/10-9-Mavericks-DEBUG.plist"
     --amd-core-count "$TARGET_AMD_PATCH_CORES"
   )
   generator_args+=("${KEXT_ARGS[@]}")
@@ -311,7 +311,7 @@ run_build() {
 
   python3 "$VALIDATOR" "$BUILD_ROOT/ESP/EFI/OC/config.plist"
 
-  cp -f "$CACHE_ROOT/amd/10-9-Mavericks.plist" "$BUILD_ROOT/Payload/10-9-Mavericks.source.plist"
+  cp -f "$CACHE_ROOT/amd/10-9-Mavericks-DEBUG.plist" "$BUILD_ROOT/Payload/10-9-Mavericks.source.plist"
   cp -f "$KERNEL_INSTALLER" "$BUILD_ROOT/Payload/apply_mavericks_amd_kernel.sh"
   chmod 0755 "$BUILD_ROOT/Payload/apply_mavericks_amd_kernel.sh"
 

@@ -8,8 +8,8 @@ KEXT_ROOT="$CACHE_ROOT/kexts"
 AMD_COMMIT="f6860343d6a13ae954a0043cecb04a809faba0f8"
 KERNEL_DOWNLOADER="$ROOT_DIR/scripts/download_carnations_amd_kernel.sh"
 
-PATCH_URL="https://raw.githubusercontent.com/Carnations-Botanica/AMD-Kernel-Patches/$AMD_COMMIT/10-9-Mavericks.plist"
-PATCH_BLOB="b16798f398192f097d81243ea8eacda38305ef7d"
+PATCH_URL="https://raw.githubusercontent.com/Carnations-Botanica/AMD-Kernel-Patches/$AMD_COMMIT/extras/10-9-Mavericks-DEBUG.plist"
+PATCH_BLOB="74a66adc97b2665eded59c5972f08ec149a985d3"
 KERNEL_BLOB="cfdf0513edd8c57ed7f9b7c2d1f90090425b00fd"
 
 RTL_COMMIT="60d18d064988ed2a62206de55d682c8f1b77e92d"
@@ -56,11 +56,11 @@ download_blob() {
   mv -- "$output.part" "$output"
 }
 
-download_blob "$PATCH_URL" "$PATCH_BLOB" "$AMD_ROOT/10-9-Mavericks.plist"
+download_blob "$PATCH_URL" "$PATCH_BLOB" "$AMD_ROOT/10-9-Mavericks-DEBUG.plist"
 [[ -f "$KERNEL_DOWNLOADER" ]] || die "AMD kernel downloader is missing: $KERNEL_DOWNLOADER"
 bash "$KERNEL_DOWNLOADER" --os mavericks --output "$AMD_ROOT/mach_kernel"
 
-python3 - "$AMD_ROOT/10-9-Mavericks.plist" "$AMD_ROOT/mach_kernel" <<'PY'
+python3 - "$AMD_ROOT/10-9-Mavericks-DEBUG.plist" "$AMD_ROOT/mach_kernel" <<'PY'
 from pathlib import Path
 import plistlib
 import sys
@@ -72,8 +72,8 @@ patches=obj.get("Kernel",{}).get("Patch")
 if not isinstance(patches,list) or len(patches) < 10:
     raise SystemExit("Mavericks AMD patch plist does not contain the expected Kernel/Patch set")
 core=[x for x in patches if "cpuid_cores_per_package" in str(x.get("Comment",""))]
-if len(core) != 1 or core[0].get("Replace") != b"\xBA\x00\x00\x00\x00":
-    raise SystemExit("Unexpected Mavericks core-count patch template")
+if len(core) != 1 or core[0].get("Replace") != b"\xB8\x00\x00\x00\x00\x0F\x1F\x00":
+    raise SystemExit("Unexpected Mavericks DEBUG core-count patch template")
 data=kernel.read_bytes()
 if not data.startswith((b"\xcf\xfa\xed\xfe", b"\xca\xfe\xba\xbe", b"\xbe\xba\xfe\xca")):
     raise SystemExit("Downloaded mach_kernel does not look like a Mach-O/FAT binary")
@@ -82,7 +82,7 @@ if b"Darwin Kernel Version 13." not in data and b"xnu-2422" not in data:
 print(f"AMD patch set: {len(patches)} patches")
 print(f"DEBUG mach_kernel: {len(data)} bytes")
 PY
-chmod 0644 "$AMD_ROOT/mach_kernel" "$AMD_ROOT/10-9-Mavericks.plist"
+chmod 0644 "$AMD_ROOT/mach_kernel" "$AMD_ROOT/10-9-Mavericks-DEBUG.plist"
 
 RTL="$KEXT_ROOT/RealtekRTL8111.kext"
 mkdir -p "$RTL/Contents/MacOS"
@@ -107,11 +107,11 @@ PY
 cat > "$AMD_ROOT/SOURCE.txt" <<EOF
 source_repo=Carnations-Botanica/AMD-Kernel-Patches
 source_commit=$AMD_COMMIT
-patch_path=10-9-Mavericks.plist
+patch_path=extras/10-9-Mavericks-DEBUG.plist
 patch_git_blob=$PATCH_BLOB
 kernel_path=extras/kernels/mavericks/mach_kernel
 kernel_git_blob=$KERNEL_BLOB
-note=Mavericks and below require the upstream stock DEBUG kernel in addition to OpenCore patches.
+note=Mavericks and below require the upstream stock DEBUG kernel together with the matching DEBUG OpenCore patch signatures.
 EOF
 
 cat > "$RTL/SOURCE.txt" <<EOF

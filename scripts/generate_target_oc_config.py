@@ -125,13 +125,17 @@ def load_kernel_patches(path: Path, amd_core_count: int | None) -> list[dict]:
             )
         patch = normalized[core_patch_indexes[0]]
         current = patch.get("Replace")
-        expected = b"\xBA\x00\x00\x00\x00"
-        if current != expected:
+        release_template = b"\xBA\x00\x00\x00\x00"
+        debug_template = b"\xB8\x00\x00\x00\x00\x0F\x1F\x00"
+        if current == release_template:
+            patch["Replace"] = b"\xBA" + bytes([amd_core_count]) + b"\x00\x00\x00"
+        elif current == debug_template:
+            patch["Replace"] = b"\xB8" + bytes([amd_core_count]) + b"\x00\x00\x00\x0F\x1F\x00"
+        else:
             raise ValueError(
                 f"{path}: unexpected Mavericks cpuid_cores_per_package Replace value "
-                f"{current!r}; expected {expected!r}"
+                f"{current!r}; expected RELEASE {release_template!r} or DEBUG {debug_template!r}"
             )
-        patch["Replace"] = b"\xBA" + bytes([amd_core_count]) + b"\x00\x00\x00"
 
     return normalized
 
