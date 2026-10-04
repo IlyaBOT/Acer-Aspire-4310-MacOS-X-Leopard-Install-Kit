@@ -286,7 +286,8 @@ run_build() {
     --kernel-arch x86_64
     --kernel-cache Cacheless
     --boot-preset "$BOOT_PRESET"
-    --runtime-profile modern
+    --runtime-profile legacy
+    --setup-virtual-map
     --custom-kernel
     --provide-current-cpu-info
     --no-release-usb-ownership
@@ -324,9 +325,10 @@ assert c["Kernel"]["Emulate"]["DummyPowerManagement"] is True
 assert c["Kernel"]["Scheme"]["CustomKernel"] is True
 assert c["Kernel"]["Scheme"]["KernelArch"] == "x86_64"
 assert c["Kernel"]["Scheme"]["KernelCache"] == "Cacheless"
-assert c["Booter"]["Quirks"]["EnableWriteUnprotector"] is False
-assert c["Booter"]["Quirks"]["RebuildAppleMemoryMap"] is True
-assert c["Booter"]["Quirks"]["SyncRuntimePermissions"] is True
+assert c["Booter"]["Quirks"]["EnableWriteUnprotector"] is True
+assert c["Booter"]["Quirks"]["RebuildAppleMemoryMap"] is False
+assert c["Booter"]["Quirks"]["SyncRuntimePermissions"] is False
+assert c["Booter"]["Quirks"]["SetupVirtualMap"] is True
 assert c["UEFI"]["Quirks"]["ReleaseUsbOwnership"] is False
 drivers={d["Path"] for d in c["UEFI"]["Drivers"] if d.get("Enabled")}
 assert "OpenHfsPlus.efi" in drivers
@@ -377,10 +379,10 @@ ASRock FM2A58M-VG3+ R2.0 / AMD A8-7600 Mavericks experimental UEFI payload
 
 6. UEFI memory/profile quirks:
    ReleaseUsbOwnership=NO
-   EnableWriteUnprotector=NO
-   RebuildAppleMemoryMap=YES
-   SyncRuntimePermissions=YES
-   SetupVirtualMap=NO
+   EnableWriteUnprotector=YES
+   RebuildAppleMemoryMap=NO
+   SyncRuntimePermissions=NO
+   SetupVirtualMap=YES
 
 7. VoodooTSCSync IOCPUNumber=3 for the 4-core A8-7600.
 
