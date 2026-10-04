@@ -180,6 +180,11 @@ def main() -> int:
         action="store_true",
         help="Enable Booter/Quirks/SetupVirtualMap for older UEFI firmware.",
     )
+    parser.add_argument(
+        "--force-exit-boot-services",
+        action="store_true",
+        help="Enable Booter/Quirks/ForceExitBootServices for firmware that rejects a stale memory-map key.",
+    )
     parser.add_argument("--driver", action="append", default=[])
     parser.add_argument("--kext", action="append", default=[])
     parser.add_argument(
@@ -218,6 +223,7 @@ def main() -> int:
     booter = config["Booter"]["Quirks"]
     booter["FixupAppleEfiImages"] = True
     booter["SetupVirtualMap"] = args.setup_virtual_map
+    booter["ForceExitBootServices"] = args.force_exit_boot_services
     if args.runtime_profile == "off":
         booter["EnableSafeModeSlide"] = False
         booter["EnableWriteUnprotector"] = False
